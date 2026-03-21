@@ -276,38 +276,108 @@
         const cache = state.carKinematics.get(carKey) || {
             lastAnchorServerMs: null,
             lastLastTime: null,
+            learnedSpeedMps: null,
         };
 
         const anchorAbs = laps * model.trackLength + checkpointDistance;
 
         if (Number.isFinite(lastTimeMs) && lastTimeMs !== cache.lastLastTime) {
+            if (Number.isFinite(cache.lastAnchorServerMs)) {
+                const actualDurationMs = lastTimeMs - cache.lastAnchorServerMs;
+                const completedIndex = lastIndex === 0 ? model.segments.length : lastIndex;
+                const completedLength = model.segments[completedIndex - 1];
+                if (Number.isFinite(actualDurationMs) && actualDurationMs > 0 && Number.isFinite(completedLength) && completedLength > 0) {
+                    const actualSpeedMps = completedLength / (actualDurationMs / 1000);
+                    if (Number.isFinite(actualSpeedMps) && actualSpeedMps > 0) {
+                        const prevSpeed = cache.learnedSpeedMps;
+                        cache.learnedSpeedMps = Number.isFinite(prevSpeed)
+                            ? prevSpeed * 0.6 + actualSpeedMps * 0.4
+                            : actualSpeedMps;
+                    }
+                }
+            }
+
             cache.lastAnchorServerMs = lastTimeMs;
             cache.lastLastTime = lastTimeMs;
         }
 
         const hasEta = Number.isFinite(segmentDurationMs) && segmentDurationMs > 0 && etaDistance > 0 && Number.isFinite(lastTimeMs);
-        if (!hasEta) return null;
 
-        const speedMps = etaDistance / (segmentDurationMs / 1000);
+        const sectorIndex = lastIndex === 0 ? model.segments.length : lastIndex;
+        const sectorLength = model.segments[sectorIndex - 1] || nextSegment || null;
+        const sectorTimeSeconds = sectorIndex >= 1 && sectorIndex <= 9
+            ? parseTime(car[`S${sectorIndex}TIME`])
+            : Number.POSITIVE_INFINITY;
+        const sectorTimeMs = Number.isFinite(sectorTimeSeconds) && sectorTimeSeconds > 0
+            ? sectorTimeSeconds * 1000
+            : null;
+        const learnedDurationMs = Number.isFinite(cache.learnedSpeedMps) && cache.learnedSpeedMps > 0 && Number.isFinite(sectorLength) && sectorLength > 0
+            ? (sectorLength / cache.learnedSpeedMps) * 1000
+            : null;
+        const hasKinematic = Number.isFinite(sectorLength) && sectorLength > 0 && Number.isFinite(sectorTimeMs) && sectorTimeMs > 0 && Number.isFinite(lastTimeMs);
+
+        if (!hasEta && !hasKinematic) return null;
 
         const anchorBaseMs = Number.isFinite(cache.lastAnchorServerMs)
             ? cache.lastAnchorServerMs
             : serverNowMs;
         const anchorAgeMs = Math.max(0, serverNowMs - anchorBaseMs);
-        const fraction = clamp(anchorAgeMs / segmentDurationMs, 0, 1);
-        const progressAbs = anchorAbs + fraction * etaDistance;
-        const isExtrapolated = anchorAgeMs > segmentDurationMs;
+
+        let etaProgressAbs = null;
+        let etaSpeedMps = null;
+        let etaExtrapolated = false;
+        if (hasEta) {
+            etaSpeedMps = etaDistance / (segmentDurationMs / 1000);
+            const fraction = clamp(anchorAgeMs / segmentDurationMs, 0, 1);
+            etaProgressAbs = anchorAbs + fraction * etaDistance;
+            etaExtrapolated = anchorAgeMs > segmentDurationMs;
+        }
+
+        let kinProgressAbs = null;
+        let kinSpeedMps = null;
+        let kinExtrapolated = false;
+        if (hasKinematic) {
+            const kinDurationMs = Number.isFinite(learnedDurationMs) ? learnedDurationMs : sectorTimeMs;
+            kinSpeedMps = sectorLength / (kinDurationMs / 1000);
+            const fraction = clamp(anchorAgeMs / kinDurationMs, 0, 1);
+            kinProgressAbs = anchorAbs + fraction * sectorLength;
+            kinExtrapolated = anchorAgeMs > kinDurationMs;
+        }
+
+        let weightEta = 0;
+        let weightKin = 0;
+        if (hasEta && hasKinematic) {
+            const mix = clamp(anchorAgeMs / segmentDurationMs, 0, 1);
+            weightEta = 1 - mix;
+            weightKin = mix;
+        } else if (hasEta) {
+            weightEta = 1;
+        } else if (hasKinematic) {
+            weightKin = 1;
+        }
+
+        const weightSum = weightEta + weightKin || 1;
+        const progressAbs = (
+            (etaProgressAbs ?? 0) * weightEta +
+            (kinProgressAbs ?? 0) * weightKin
+        ) / weightSum;
+
+        const speedMps = (
+            (etaSpeedMps ?? 0) * weightEta +
+            (kinSpeedMps ?? 0) * weightKin
+        ) / weightSum;
 
         const lapDistanceRaw = progressAbs - laps * model.trackLength;
         const lapDistance = ((lapDistanceRaw % model.trackLength) + model.trackLength) % model.trackLength;
+        const isExtrapolated = etaExtrapolated || kinExtrapolated;
 
         state.carKinematics.set(carKey, cache);
 
         return {
             progress: progressAbs,
             lapDistance,
-            segmentDurationMs,
-            segmentLength: hasEta ? etaDistance : nextSegment,
+            segmentDurationMs: hasEta ? segmentDurationMs : sectorTimeMs,
+            segmentLength: hasEta ? etaDistance : sectorLength,
             isExtrapolated,
             speedMps,
         };
