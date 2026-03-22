@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube NLS Timing Overlay
 // @namespace    https://github.com/lhnrdt/nls-timing
-// @version      1.1.1
+// @version      1.1.2
 // @description  Stable gated NLS overlay with relative timing window
 // @match        https://www.youtube.com/*
 // @grant        GM_getResourceText
