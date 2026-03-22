@@ -4,8 +4,9 @@
 // @version      1.1.1
 // @description  Stable gated NLS overlay with relative timing window
 // @match        https://www.youtube.com/*
-// @grant        none
+// @grant        GM_getResourceText
 // @run-at       document-idle
+// @resource     TRACKMAP https://raw.githubusercontent.com/lhnrdt/nls-timing/modularization/trackmap.svg
 // @updateURL    https://raw.githubusercontent.com/lhnrdt/nls-timing/modularization/tm-nls-timing.js
 // @downloadURL  https://raw.githubusercontent.com/lhnrdt/nls-timing/modularization/tm-nls-timing.js
 // @require      https://raw.githubusercontent.com/lhnrdt/nls-timing/modularization/src/config.js

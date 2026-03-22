@@ -76,23 +76,31 @@
     function ensureTrackSvgData() {
         if (state.mapSvgData || state.mapSvgLoading) return;
         const url = NLS.CONFIG.trackMapUrl;
-        if (!url) return;
+        const resourceText = typeof GM_getResourceText === 'function'
+            ? GM_getResourceText('TRACKMAP')
+            : null;
+        if (!resourceText && !url) return;
 
         state.mapSvgLoading = true;
-        NLS.log('Track map load', url);
-        fetch(url)
-            .then(res => res.text())
-            .then((svgText) => {
-                const parser = new DOMParser();
-                const doc = parser.parseFromString(svgText, 'image/svg+xml');
-                const svgEl = doc.querySelector('svg');
-                const pathEl = doc.querySelector('path');
-                if (!svgEl || !pathEl) return;
+        NLS.log('Track map load', resourceText ? 'TM resource' : url);
+        const loadSvgText = resourceText
+            ? Promise.resolve(resourceText)
+            : fetch(url).then(res => res.text());
 
-                const d = pathEl.getAttribute('d') || '';
-                const viewBox = svgEl.getAttribute('viewBox');
-                const width = svgEl.getAttribute('width');
-                const height = svgEl.getAttribute('height');
+        loadSvgText
+            .then((svgText) => {
+                const svgMatch = svgText.match(/<svg[^>]*>/i);
+                const pathMatch = svgText.match(/<path[^>]*\sd=["']([^"']+)["'][^>]*>/i);
+                if (!svgMatch || !pathMatch) return;
+
+                const svgTag = svgMatch[0];
+                const d = pathMatch[1] || '';
+                const viewBoxMatch = svgTag.match(/viewBox=["']([^"']+)["']/i);
+                const widthMatch = svgTag.match(/width=["']([^"']+)["']/i);
+                const heightMatch = svgTag.match(/height=["']([^"']+)["']/i);
+                const viewBox = viewBoxMatch ? viewBoxMatch[1] : null;
+                const width = widthMatch ? widthMatch[1] : null;
+                const height = heightMatch ? heightMatch[1] : null;
                 const normalizedViewBox = viewBox || (width && height ? `0 0 ${width} ${height}` : null);
 
                 state.mapSvgData = {
