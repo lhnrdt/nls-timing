@@ -197,6 +197,7 @@
             const half = size / 2;
             const x1 = p1.x - nx * half;
             const y1 = p1.y - ny * half;
+            const x2 = p1.x + nx * half;
             const y2 = p1.y + ny * half;
             const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
             line.setAttribute('x1', x1.toFixed(2));
