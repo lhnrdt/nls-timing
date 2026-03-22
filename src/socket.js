@@ -18,10 +18,15 @@
 
         state.ws.onopen = () => {
             state.mainStatus.textContent = 'Status: connected';
+            const override = NLS.CONFIG.clientLocalTimeOverride;
+            const overrideMs = Number.isFinite(override)
+                ? override
+                : (override ? Date.parse(String(override)) : NaN);
+            const clientLocalTime = Number.isFinite(overrideMs) ? overrideMs : Date.now();
             state.ws.send(JSON.stringify({
                 eventId: NLS.CONFIG.eventId,
                 eventPid: NLS.CONFIG.eventPid,
-                clientLocalTime: Date.now()
+                clientLocalTime
             }));
         };
 

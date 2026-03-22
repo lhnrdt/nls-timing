@@ -116,7 +116,7 @@
         headers.forEach((h, i) => {
             const th = document.createElement('th');
             th.textContent = h;
-            th.style.background = 'rgba(255,255,255,0.08)';
+            th.style.background = 'rgb(255, 0, 234)';
             th.style.padding = '4px 6px';
             th.style.textAlign = i >= 5 ? 'right' : 'left';
             th.style.borderBottom = '1px solid rgba(255,255,255,0.15)';

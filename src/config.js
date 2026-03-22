@@ -26,6 +26,7 @@
         defaultStartNumber: '911',
         defaultDelayMs: 4000,
         defaultDotSize: 5,
-        trackMapUrl: 'https://raw.githubusercontent.com/lhnrdt/nls-timing/modularization/trackmap.svg'
+        trackMapUrl: 'https://raw.githubusercontent.com/lhnrdt/nls-timing/modularization/trackmap.svg',
+        clientLocalTimeOverride: '2026-03-22T11:00:00Z'
     };
 })();
