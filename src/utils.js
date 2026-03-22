@@ -171,6 +171,16 @@
         return Math.min(max, Math.max(min, value));
     }
 
+    /**
+     * Log a debug message when logging is enabled.
+     * @param {string} message
+     * @param {...unknown} args
+     */
+    function log(message, ...args) {
+        if (!NLS.CONFIG?.enableLogging) return;
+        console.log(`[NLS] ${message}`, ...args);
+    }
+
     NLS.normalizeText = normalizeText;
     NLS.getTitle = getTitle;
     NLS.getChannel = getChannel;
@@ -182,4 +192,5 @@
     NLS.isRetired = isRetired;
     NLS.toNumber = toNumber;
     NLS.clamp = clamp;
+    NLS.log = log;
 })();

@@ -57,6 +57,7 @@
      * Initialize overlays and start timers.
      */
     function start() {
+        NLS.log('App start');
         tick();
         NLS.connect();
         setInterval(tick, 1000);

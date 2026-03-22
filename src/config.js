@@ -19,6 +19,7 @@
         wsUrl: 'wss://livetiming.azurewebsites.net/',
         eventId: '20',
         eventPid: [0, 4],
+        enableLogging: true,
         maxRows: 10,
         relativeRowsBefore: 3,
         relativeRowsAfter: 3,

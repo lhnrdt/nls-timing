@@ -14,6 +14,7 @@
 
         state.mainStatus.textContent = 'Status: connecting';
 
+        NLS.log('WS connecting', NLS.CONFIG.wsUrl);
         state.ws = new WebSocket(NLS.CONFIG.wsUrl);
 
         state.ws.onopen = () => {
@@ -23,11 +24,24 @@
                 ? override
                 : (override ? Date.parse(String(override)) : NaN);
             const clientLocalTime = Number.isFinite(overrideMs) ? overrideMs : Date.now();
+            NLS.log('WS connected, sending init', {
+                eventId: NLS.CONFIG.eventId,
+                eventPid: NLS.CONFIG.eventPid,
+                clientLocalTime
+            });
             state.ws.send(JSON.stringify({
                 eventId: NLS.CONFIG.eventId,
                 eventPid: NLS.CONFIG.eventPid,
                 clientLocalTime
             }));
+        };
+
+        state.ws.onerror = (event) => {
+            NLS.log('WS error', event);
+        };
+
+        state.ws.onclose = (event) => {
+            NLS.log('WS closed', { code: event.code, reason: event.reason });
         };
 
         state.ws.onmessage = (e) => {
@@ -40,10 +54,12 @@
                     const clientTime = NLS.toNumber(p.clientLocalTime);
                     if (Number.isFinite(serverTime) && Number.isFinite(clientTime)) {
                         state.timeOffsetMs = serverTime - clientTime;
+                        NLS.log('WS timesync', { offsetMs: state.timeOffsetMs });
                     }
                 }
 
                 if (Array.isArray(p.RESULT)) {
+                    NLS.log('WS timing update', { cars: p.RESULT.length });
                     if (!state.latestPayload) {
                         state.carKinematics.clear();
                         state.timingInit.clear();

@@ -79,6 +79,7 @@
         if (!url) return;
 
         state.mapSvgLoading = true;
+        NLS.log('Track map load', url);
         fetch(url)
             .then(res => res.text())
             .then((svgText) => {
@@ -107,8 +108,11 @@
                 if (state.mapSvg && normalizedViewBox) {
                     state.mapSvg.setAttribute('viewBox', normalizedViewBox);
                 }
+                NLS.log('Track map loaded');
             })
-            .catch(() => {})
+            .catch((error) => {
+                NLS.log('Track map load failed', error);
+            })
             .finally(() => {
                 state.mapSvgLoading = false;
             });
