@@ -48,8 +48,7 @@
         trackPath.setAttribute('stroke-width', '2.5');
         trackPath.setAttribute('stroke-linecap', 'round');
         trackPath.setAttribute('stroke-linejoin', 'round');
-        );
-        trackPath.setAttribute('d', NLS.TRACK_PATH || '');
+        trackPath.setAttribute('d', state.mapSvgData?.d || '');
 
         const markers = document.createElementNS('http://www.w3.org/2000/svg', 'g');
         const dots = document.createElementNS('http://www.w3.org/2000/svg', 'g');
@@ -66,7 +65,53 @@
         state.mapDots = dots;
         state.mapMarkers = markers;
 
+        ensureTrackSvgData();
+
         return box;
+    }
+
+    /**
+     * Fetch the track map SVG and cache its path and viewbox data.
+     */
+    function ensureTrackSvgData() {
+        if (state.mapSvgData || state.mapSvgLoading) return;
+        const url = NLS.CONFIG.trackMapUrl;
+        if (!url) return;
+
+        state.mapSvgLoading = true;
+        fetch(url)
+            .then(res => res.text())
+            .then((svgText) => {
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(svgText, 'image/svg+xml');
+                const svgEl = doc.querySelector('svg');
+                const pathEl = doc.querySelector('path');
+                if (!svgEl || !pathEl) return;
+
+                const d = pathEl.getAttribute('d') || '';
+                const viewBox = svgEl.getAttribute('viewBox');
+                const width = svgEl.getAttribute('width');
+                const height = svgEl.getAttribute('height');
+                const normalizedViewBox = viewBox || (width && height ? `0 0 ${width} ${height}` : null);
+
+                state.mapSvgData = {
+                    d,
+                    viewBox: normalizedViewBox,
+                    width,
+                    height
+                };
+
+                if (state.mapTrackPath) {
+                    state.mapTrackPath.setAttribute('d', d);
+                }
+                if (state.mapSvg && normalizedViewBox) {
+                    state.mapSvg.setAttribute('viewBox', normalizedViewBox);
+                }
+            })
+            .catch(() => {})
+            .finally(() => {
+                state.mapSvgLoading = false;
+            });
     }
 
     /**
@@ -140,7 +185,6 @@
             const half = size / 2;
             const x1 = p1.x - nx * half;
             const y1 = p1.y - ny * half;
-                trackPath.setAttribute('d', state.mapSvgData?.d || '');
             const y2 = p1.y + ny * half;
             const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
             line.setAttribute('x1', x1.toFixed(2));
@@ -157,54 +201,9 @@
         addMarkerAtLength(0, 'rgba(255,255,255,0.95)', '3', 26);
 
         // Timing sector markers.
-                ensureTrackSvgData();
         model.cumulative.forEach((distance) => {
             const fraction = distance / model.trackLength;
             addMarkerAtLength(fraction * pathLength, 'rgba(255,255,255,0.35)', '1.5', 18);
-
-            /**
-             * Fetch the track map SVG and cache its path and viewbox data.
-             */
-            function ensureTrackSvgData() {
-                if (state.mapSvgData || state.mapSvgLoading) return;
-                const url = NLS.CONFIG.trackMapUrl;
-                if (!url) return;
-
-                state.mapSvgLoading = true;
-                fetch(url)
-                    .then(res => res.text())
-                    .then((svgText) => {
-                        const parser = new DOMParser();
-                        const doc = parser.parseFromString(svgText, 'image/svg+xml');
-                        const svgEl = doc.querySelector('svg');
-                        const pathEl = doc.querySelector('path');
-                        if (!svgEl || !pathEl) return;
-
-                        const d = pathEl.getAttribute('d') || '';
-                        const viewBox = svgEl.getAttribute('viewBox');
-                        const width = svgEl.getAttribute('width');
-                        const height = svgEl.getAttribute('height');
-                        const normalizedViewBox = viewBox || (width && height ? `0 0 ${width} ${height}` : null);
-
-                        state.mapSvgData = {
-                            d,
-                            viewBox: normalizedViewBox,
-                            width,
-                            height
-                        };
-
-                        if (state.mapTrackPath) {
-                            state.mapTrackPath.setAttribute('d', d);
-                        }
-                        if (state.mapSvg && normalizedViewBox) {
-                            state.mapSvg.setAttribute('viewBox', normalizedViewBox);
-                        }
-                    })
-                    .catch(() => {})
-                    .finally(() => {
-                        state.mapSvgLoading = false;
-                    });
-            }
         });
 
         state.cars.forEach(car => {
