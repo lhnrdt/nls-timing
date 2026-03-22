@@ -1,0 +1,41 @@
+(() => {
+    const NLS = window.NLS || (window.NLS = {});
+    const CONFIG = NLS.CONFIG;
+
+    NLS.state = {
+        ws: null,
+        cars: [],
+        latestPayload: null,
+        timeOffsetMs: 0,
+        carKinematics: new Map(),
+        leaderLap: null,
+
+        mainTbody: null,
+        mainStatus: null,
+        mainMeta: null,
+
+        relTbody: null,
+        relStatus: null,
+        relEstimateStatus: null,
+        relEstimateCompleted: false,
+        relInput: null,
+
+        timingInit: new Map(),
+        timingUpdated: new Set(),
+
+        mapBox: null,
+        mapSvg: null,
+        mapTrackPath: null,
+        mapDots: null,
+        mapMarkers: null,
+
+        settingsBox: null,
+        settingsToggle: null,
+        settingsOpen: false,
+        delayMs: CONFIG.defaultDelayMs,
+        dotSize: CONFIG.defaultDotSize,
+
+        initialSelectionDone: false,
+        selectedStartNumber: CONFIG.defaultStartNumber
+    };
+})();
