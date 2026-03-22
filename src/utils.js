@@ -1,10 +1,19 @@
 (() => {
     const NLS = window.NLS || (window.NLS = {});
 
+    /**
+     * Normalize text by collapsing whitespace and trimming.
+     * @param {unknown} t
+     * @returns {string}
+     */
     function normalizeText(t) {
         return String(t ?? '').replace(/\s+/g, ' ').trim();
     }
 
+    /**
+     * Resolve the current video title using multiple selectors.
+     * @returns {string}
+     */
     function getTitle() {
         const selectors = [
             'ytd-watch-metadata h1 yt-formatted-string',
@@ -32,6 +41,10 @@
         return '';
     }
 
+    /**
+     * Resolve the current channel name using multiple selectors.
+     * @returns {string}
+     */
     function getChannel() {
         const selectors = [
             '#channel-name a',
@@ -50,6 +63,10 @@
         return '';
     }
 
+    /**
+     * Check if the current page matches the configured event.
+     * @returns {boolean}
+     */
     function matches() {
         const title = getTitle();
         const channel = getChannel();
@@ -60,6 +77,10 @@
         );
     }
 
+    /**
+     * Locate the YouTube player container for overlay mounting.
+     * @returns {Element|null}
+     */
     function getPlayerContainer() {
         return (
             document.getElementById('movie_player') ||
@@ -68,6 +89,11 @@
         );
     }
 
+    /**
+     * Parse a timing string into seconds.
+     * @param {string} t
+     * @returns {number}
+     */
     function parseTime(t) {
         const text = normalizeText(t);
         if (!text || text === 'PIT') return Number.POSITIVE_INFINITY;
@@ -81,6 +107,11 @@
         return Number.POSITIVE_INFINITY;
     }
 
+    /**
+     * Parse a gap value that may be time, numeric, or lap text.
+     * @param {string} gapText
+     * @returns {number|null}
+     */
     function parseGapSeconds(gapText) {
         const text = normalizeText(gapText);
 
@@ -98,22 +129,44 @@
         return null;
     }
 
+    /**
+     * Extract lap count from a gap string like "lap 3".
+     * @param {string} gapText
+     * @returns {number|null}
+     */
     function parseGapLapNumber(gapText) {
         const text = normalizeText(gapText);
         const match = text.match(/lap\s*(\d+)/i);
         return match ? Number(match[1]) : null;
     }
 
+    /**
+     * Heuristic to detect if a car is retired (PIT across sectors).
+     * @param {Record<string, string>} car
+     * @returns {boolean}
+     */
     function isRetired(car) {
         return ['S1TIME', 'S2TIME', 'S3TIME', 'S4TIME', 'S5TIME']
             .some(key => normalizeText(car[key]).toUpperCase() === 'PIT');
     }
 
+    /**
+     * Convert a value to a finite number, otherwise null.
+     * @param {unknown} value
+     * @returns {number|null}
+     */
     function toNumber(value) {
         const num = Number(value);
         return Number.isFinite(num) ? num : null;
     }
 
+    /**
+     * Clamp a numeric value between min and max.
+     * @param {number} value
+     * @param {number} min
+     * @param {number} max
+     * @returns {number}
+     */
     function clamp(value, min, max) {
         return Math.min(max, Math.max(min, value));
     }

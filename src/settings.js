@@ -3,6 +3,10 @@
     const state = NLS.state;
     const { SETTINGS_BOX_ID, SETTINGS_TOGGLE_ID } = NLS.IDS;
 
+    /**
+     * Ensure the settings toggle button exists and is attached.
+     * @returns {HTMLButtonElement|null}
+     */
     function ensureSettingsToggle() {
         let button = document.getElementById(SETTINGS_TOGGLE_ID);
         const player = NLS.getPlayerContainer();
@@ -49,6 +53,10 @@
         return button;
     }
 
+    /**
+     * Ensure the settings panel exists and is attached.
+     * @returns {HTMLDivElement|null}
+     */
     function ensureSettingsOverlay() {
         let box = document.getElementById(SETTINGS_BOX_ID);
         const player = NLS.getPlayerContainer();
@@ -122,6 +130,7 @@
         dotInput.style.background = 'rgba(255,255,255,0.08)';
         dotInput.style.color = '#fff';
 
+        /** Update the delay state from the input. */
         function updateDelay() {
             const seconds = Number(delayInput.value);
             if (!Number.isFinite(seconds)) return;
@@ -129,6 +138,7 @@
             state.delayMs = clamped * 1000;
         }
 
+        /** Update the dot size state and redraw the map. */
         function updateDotSize() {
             const size = Number(dotInput.value);
             if (!Number.isFinite(size)) return;
@@ -136,10 +146,12 @@
             NLS.renderTrackMap();
         }
 
+        /** @param {KeyboardEvent} e */
         function stopPlayerShortcuts(e) {
             e.stopPropagation();
         }
 
+        /** @param {KeyboardEvent} e */
         function stopPlayerShortcutsAndDefaultForSpace(e) {
             e.stopPropagation();
             if (e.key === ' ' || e.code === 'Space') {

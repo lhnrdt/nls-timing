@@ -1,7 +1,11 @@
+// Entry point that wires overlays, timers, and the websocket.
 (() => {
     const NLS = window.NLS || (window.NLS = {});
     const state = NLS.state;
 
+    /**
+     * Toggle overlay visibility based on page match state.
+     */
     function updateVisibility() {
         const main = NLS.ensureMainOverlay();
         const rel = NLS.ensureRelativeOverlay();
@@ -17,6 +21,9 @@
         if (settingsToggle) settingsToggle.style.display = show ? 'block' : 'none';
     }
 
+    /**
+     * Periodic layout upkeep to keep overlays attached to the player.
+     */
     function tick() {
         const main = NLS.ensureMainOverlay();
         const rel = NLS.ensureRelativeOverlay();
@@ -46,6 +53,9 @@
         }
     }
 
+    /**
+     * Initialize overlays and start timers.
+     */
     function start() {
         tick();
         NLS.connect();

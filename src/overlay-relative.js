@@ -3,6 +3,10 @@
     const state = NLS.state;
     const { REL_BOX_ID } = NLS.IDS;
 
+    /**
+     * Ensure the relative timing overlay exists and is attached.
+     * @returns {HTMLDivElement|null}
+     */
     function ensureRelativeOverlay() {
         let box = document.getElementById(REL_BOX_ID);
         const player = NLS.getPlayerContainer();
@@ -76,10 +80,12 @@
         input.style.color = '#fff';
         input.style.pointerEvents = 'auto';
 
+        /** @param {KeyboardEvent} e */
         function stopPlayerShortcuts(e) {
             e.stopPropagation();
         }
 
+        /** @param {KeyboardEvent} e */
         function stopPlayerShortcutsAndDefaultForSpace(e) {
             e.stopPropagation();
             if (e.key === ' ' || e.code === 'Space') {
@@ -152,6 +158,14 @@
         return box;
     }
 
+    /**
+     * Format the relative gap text for fallback mode.
+     * @param {Record<string, unknown>} selectedCar
+     * @param {Record<string, unknown>} otherCar
+     * @param {number} selectedIndex
+     * @param {number} otherIndex
+     * @returns {string}
+     */
     function formatRelativeValue(selectedCar, otherCar, selectedIndex, otherIndex) {
         if (selectedIndex === otherIndex) {
             return '0.000';
@@ -200,6 +214,9 @@
         return otherIndex < selectedIndex ? '+?' : '-?';
     }
 
+    /**
+     * Render the relative timing table around the selected car.
+     */
     function renderRelative() {
         if (!NLS.matches()) return;
         if (!state.relTbody) return;
@@ -261,6 +278,13 @@
         const serverNowMs = NLS.getServerNowMs();
         const selectedProgress = NLS.computeCarProgress(selectedCar, trackModel, serverNowMs);
 
+        /**
+         * Apply row background for lap deltas and selection highlight.
+         * @param {HTMLTableRowElement} row
+         * @param {Record<string, unknown>} car
+         * @param {number} globalIndex
+         * @returns {string|null}
+         */
         function applyRelativeRowBackground(row, car, globalIndex) {
             if (globalIndex === selectedIndex) {
                 row.style.background = 'rgba(34,197,94,0.18)';
@@ -287,6 +311,11 @@
             return null;
         }
 
+        /**
+         * Apply a shared background to every cell in a row.
+         * @param {HTMLTableCellElement[]} cells
+         * @param {string|null} bg
+         */
         function applyCellBackground(cells, bg) {
             if (!bg) return;
             cells.forEach(cell => {
@@ -294,6 +323,7 @@
             });
         }
 
+        // Fallback when we cannot compute progress for relative positioning.
         if (!trackModel || !selectedProgress) {
             const start = Math.max(0, selectedIndex - NLS.CONFIG.relativeRowsBefore);
             const end = Math.min(state.cars.length, selectedIndex + NLS.CONFIG.relativeRowsAfter + 1);
@@ -342,6 +372,13 @@
             return;
         }
 
+        /**
+         * Compute signed shortest-path distance around the track.
+         * @param {number} selectedDistance
+         * @param {number} otherDistance
+         * @param {number} trackLength
+         * @returns {number|null}
+         */
         function signedTrackDelta(selectedDistance, otherDistance, trackLength) {
             if (!Number.isFinite(selectedDistance) || !Number.isFinite(otherDistance)) return null;
             const raw = otherDistance - selectedDistance;
@@ -376,6 +413,11 @@
         const selectedEntry = entries.find(entry => entry.index === selectedIndex);
         const rows = [...ahead.slice().reverse(), selectedEntry, ...behind].filter(Boolean);
 
+        /**
+         * Rank cars by estimated progress for a temporary position map.
+         * @param {{car: Record<string, unknown>, progressInfo: {progress:number}|null}[]} items
+         * @returns {Map<string, number>}
+         */
         function buildEstimatedPositionMap(items) {
             const ranked = items
                 .filter(entry => Number.isFinite(entry.progressInfo?.progress))
@@ -396,6 +438,12 @@
             return map;
         }
 
+        /**
+         * Decorate the position cell when estimated order differs from socket data.
+         * @param {HTMLTableCellElement} cell
+         * @param {Record<string, unknown>} car
+         * @param {Map<string, number>} estimatedMap
+         */
         function applyEstimatedPositionMarker(cell, car, estimatedMap) {
             const estPos = estimatedMap.get(NLS.normalizeText(car.STNR));
             const socketPos = NLS.toNumber(car.POSITION);
@@ -411,12 +459,22 @@
 
         const estimatedPositionMap = buildEstimatedPositionMap(entries);
 
+        /**
+         * Format speed in km/h from progress data.
+         * @param {{speedMps:number}|null} progressInfo
+         * @returns {string}
+         */
         function formatSpeedKph(progressInfo) {
             const speed = progressInfo?.speedMps;
             if (!Number.isFinite(speed) || speed <= 0) return 'n/a';
             return `${Math.round(speed * 3.6)} km/h`;
         }
 
+        /**
+         * Format lap progress percentage from progress data.
+         * @param {{lapDistance:number}|null} progressInfo
+         * @returns {string}
+         */
         function formatProgressPercent(progressInfo) {
             if (!progressInfo) return 'n/a';
             const pct = (progressInfo.lapDistance / trackModel.trackLength) * 100;
@@ -424,6 +482,14 @@
             return `${pct.toFixed(1)}%`;
         }
 
+        /**
+         * Format a relative time estimate between two cars.
+         * @param {number} distance
+         * @param {{segmentDurationMs:number|null, segmentLength:number|null, speedMps:number}|null} selectedInfo
+         * @param {{speedMps:number}|null} otherInfo
+         * @param {boolean} isEstimate
+         * @returns {string}
+         */
         function formatRelativeTime(distance, selectedInfo, otherInfo, isEstimate) {
             if (!Number.isFinite(distance) || !selectedInfo) return 'n/a';
             const { segmentDurationMs, segmentLength } = selectedInfo;

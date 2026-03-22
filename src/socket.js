@@ -2,6 +2,9 @@
     const NLS = window.NLS || (window.NLS = {});
     const state = NLS.state;
 
+    /**
+     * Connect to the timing websocket and stream updates into state.
+     */
     function connect() {
         if (state.ws) return;
 
@@ -26,6 +29,7 @@
             try {
                 const p = JSON.parse(e.data);
 
+                // Track server time offset to align progress estimation.
                 if (p?.PID === 'LTS_TIMESYNC') {
                     const serverTime = NLS.toNumber(p.serverLocalTime);
                     const clientTime = NLS.toNumber(p.clientLocalTime);

@@ -1,3 +1,4 @@
+// Shared runtime state for overlays and socket data.
 (() => {
     const NLS = window.NLS || (window.NLS = {});
     const CONFIG = NLS.CONFIG;
@@ -28,6 +29,8 @@
         mapTrackPath: null,
         mapDots: null,
         mapMarkers: null,
+        mapSvgData: null,
+        mapSvgLoading: false,
 
         settingsBox: null,
         settingsToggle: null,

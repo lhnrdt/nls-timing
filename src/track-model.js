@@ -2,6 +2,11 @@
     const NLS = window.NLS || (window.NLS = {});
     const state = NLS.state;
 
+    /**
+     * Build track model data from the timing payload.
+     * @param {Record<string, unknown>|null} payload
+     * @returns {{trackLength:number, segments:number[], cumulative:number[]} | null}
+     */
     function getTrackModel(payload) {
         if (!payload) return null;
 
@@ -40,12 +45,23 @@
         };
     }
 
+    /**
+     * Compute a server-aligned timestamp adjusted by the local delay.
+     * @returns {number}
+     */
     function getServerNowMs() {
         const offset = Number(state.timeOffsetMs);
         const delay = Number(state.delayMs) || 0;
         return Number.isFinite(offset) ? Date.now() + offset - delay : Date.now() - delay;
     }
 
+    /**
+     * Estimate per-car progress and speed along the track.
+     * @param {Record<string, unknown>} car
+     * @param {{trackLength:number, segments:number[], cumulative:number[]}} model
+     * @param {number} serverNowMs
+     * @returns {{progress:number, lapDistance:number, segmentDurationMs:number|null, segmentLength:number|null, isExtrapolated:boolean, speedMps:number} | null}
+     */
     function computeCarProgress(car, model, serverNowMs) {
         if (!model) return null;
 
@@ -152,6 +168,7 @@
             kinExtrapolated = anchorAgeMs > kinDurationMs;
         }
 
+        // Blend ETA-based and kinematic estimates as the segment ages.
         let weightEta = 0;
         let weightKin = 0;
         if (hasEta && hasKinematic) {

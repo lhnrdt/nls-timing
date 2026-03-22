@@ -1,3 +1,4 @@
+// Centralized IDs and configuration values shared across modules.
 (() => {
     const NLS = window.NLS || (window.NLS = {});
 
@@ -24,6 +25,7 @@
         relativeUpdateMs: 250,
         defaultStartNumber: '911',
         defaultDelayMs: 4000,
-        defaultDotSize: 5
+        defaultDotSize: 5,
+        trackMapUrl: 'https://raw.githubusercontent.com/lhnrdt/nls-timing/modularization/trackmap.svg'
     };
 })();

@@ -3,6 +3,10 @@
     const state = NLS.state;
     const { MAIN_BOX_ID } = NLS.IDS;
 
+    /**
+     * Determine the start number of the overall best lap holder.
+     * @returns {number|null}
+     */
     function bestLapStnr() {
         if (Array.isArray(state.latestPayload?.BEST) && state.latestPayload.BEST.length >= 4) {
             const stnr = Number(state.latestPayload.BEST[3]?.[0]);
@@ -13,6 +17,10 @@
         return first ? Number(c.STNR) : null;
     }
 
+    /**
+     * Build a map of best sector times keyed by sector name.
+     * @returns {Map<string, {stnr:number, time:string}>}
+     */
     function bestSectorMap() {
         const map = new Map();
         if (!Array.isArray(state.latestPayload?.BEST)) return map;
@@ -28,6 +36,12 @@
         return map;
     }
 
+    /**
+     * Create a styled table cell for overlay tables.
+     * @param {unknown} text
+     * @param {boolean} [alignRight=false]
+     * @returns {HTMLTableCellElement}
+     */
     function makeCell(text, alignRight = false) {
         const td = document.createElement('td');
         td.textContent = NLS.normalizeText(text);
@@ -41,6 +55,10 @@
         return td;
     }
 
+    /**
+     * Ensure the main timing overlay exists and is attached.
+     * @returns {HTMLDivElement|null}
+     */
     function ensureMainOverlay() {
         let box = document.getElementById(MAIN_BOX_ID);
         const player = NLS.getPlayerContainer();
@@ -131,6 +149,9 @@
         return box;
     }
 
+    /**
+     * Render the main timing table with sector highlights.
+     */
     function renderMain() {
         if (!NLS.matches()) return;
         if (!state.mainTbody) return;
