@@ -83,8 +83,8 @@
         box.style.background = 'rgba(0,0,0,0.88)';
         box.style.color = '#fff';
         box.style.padding = '8px';
-        box.style.minWidth = '980px';
-        box.style.maxWidth = '1100px';
+        box.style.minWidth = '1200px';
+        box.style.maxWidth = '1400px';
         box.style.maxHeight = '80vh';
         box.style.display = 'flex';
         box.style.flexDirection = 'column';
@@ -145,7 +145,13 @@
             if (i === 1) th.style.width = '34px';
             if (i === 4) th.style.width = '70px';
             if (i === 5) th.style.width = '54px';
-            if (i >= 6) th.style.width = '54px';
+            if (i === 6) th.style.width = '42px'; // Best
+            if (i === 7) th.style.width = '42px'; // Last
+            if (i === 8) th.style.width = '46px'; // S1
+            if (i === 9) th.style.width = '46px'; // S2
+            if (i === 10) th.style.width = '46px'; // S3
+            if (i === 11) th.style.width = '46px'; // S4
+            if (i === 12) th.style.width = '46px'; // S5
 
             tr.appendChild(th);
         });
@@ -241,7 +247,7 @@
                 if (!best) return;
 
                 if (Number(car.STNR) === best.stnr && NLS.normalizeText(car[key]) === best.time) {
-                    const td = cells[8 + i];
+                    const td = cells[10 + i];
                     td.style.color = '#22c55e';
                     td.style.fontWeight = '700';
                     td.style.background = 'rgba(34,197,94,0.08)';

@@ -34,6 +34,16 @@
         document.addEventListener('mouseup', () => {
             isDragging = false;
             header.style.cursor = 'grab';
+            
+            // Save position after drag ends
+            if (NLS.storage && box.id) {
+                NLS.storage.saveWindowRect(box.id, {
+                    top: box.offsetTop,
+                    left: box.offsetLeft,
+                    width: box.offsetWidth,
+                    height: box.offsetHeight
+                });
+            }
         });
     }
 
@@ -80,6 +90,16 @@
 
         document.addEventListener('mouseup', () => {
             isResizing = false;
+            
+            // Save size after resize ends
+            if (NLS.storage && box.id) {
+                NLS.storage.saveWindowRect(box.id, {
+                    top: box.offsetTop,
+                    left: box.offsetLeft,
+                    width: box.offsetWidth,
+                    height: box.offsetHeight
+                });
+            }
         });
     }
 
@@ -129,9 +149,25 @@
      * @param {number} minHeight - Minimum height
      */
     function setupWindow(box, header, overlayName, minWidth = 300, minHeight = 200) {
-        // Ensure box has relative positioning for resize handle
+        // Ensure box has absolute positioning for dragging/resizing
         if (box.style.position !== 'absolute' && box.style.position !== 'fixed') {
-            box.style.position = 'relative';
+            box.style.position = 'absolute';
+        }
+
+        // Use overlay name as ID if not set
+        if (!box.id) {
+            box.id = overlayName;
+        }
+
+        // Load saved position if available
+        if (NLS.storage) {
+            const saved = NLS.storage.loadWindowRect(box.id);
+            if (saved) {
+                box.style.top = saved.top + 'px';
+                box.style.left = saved.left + 'px';
+                box.style.width = saved.width + 'px';
+                box.style.height = saved.height + 'px';
+            }
         }
 
         makeDraggable(box, header);

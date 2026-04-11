@@ -1,214 +1,438 @@
 (() => {
     const NLS = window.NLS || (window.NLS = {});
-    const state = NLS.state;
 
     /**
-     * Build track model data from the timing payload.
-     * @param {Record<string, unknown>|null} payload
-     * @returns {{trackLength:number, segments:number[], cumulative:number[]} | null}
+     * Create and initialize a Web Worker for progress calculations
      */
-    function getTrackModel(payload) {
+    function initProgressWorker() {
+        try {
+            // Worker code as a string
+            const workerCode = `
+                // Worker: compute car progress calculations
+                self.onmessage = function(e) {
+                    const { cars, model, serverNowMs, storageData } = e.data;
+                    
+                    const results = cars.map(car => {
+                        const progress = computeCarProgress(car, model, serverNowMs, storageData);
+                        return { stnr: normalizeText(car.STNR), progress };
+                    });
+                    
+                    self.postMessage({ results });
+                };
+                
+                function normalizeText(t) {
+                    return String(t ?? '').replace(/\\s+/g, ' ').trim();
+                }
+                
+                function toNumber(value) {
+                    const num = Number(value);
+                    return Number.isFinite(num) ? num : null;
+                }
+                
+                function clamp(value, min, max) {
+                    return Math.min(max, Math.max(min, value));
+                }
+                
+                function parseTime(t) {
+                    const text = normalizeText(t);
+                    if (!text || text === 'PIT') return Number.POSITIVE_INFINITY;
+                    
+                    const parts = text.split(':').map(Number);
+                    if (parts.some(v => !Number.isFinite(v))) return Number.POSITIVE_INFINITY;
+                    
+                    if (parts.length === 1) return parts[0];
+                    if (parts.length === 2) return parts[0] * 60 + parts[1];
+                    if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+                    return Number.POSITIVE_INFINITY;
+                }
+                
+                function computeCarProgress(car, model, serverNowMs, storageData) {
+                    if (!model || !car) return null;
+                    
+                    let lastIntNum = toNumber(car.LASTINTERMEDIATENUMBER);
+                    if (!Number.isFinite(lastIntNum)) {
+                        lastIntNum = 10;
+                    }
+                    
+                    let lapDistance = 0;
+                    let currentSectorIdx = 0;
+                    
+                    if (lastIntNum === 10) {
+                        lapDistance = 0;
+                        currentSectorIdx = 0;
+                    } else if (lastIntNum >= 1 && lastIntNum <= 4) {
+                        lapDistance = model.intermediates[lastIntNum - 1];
+                        currentSectorIdx = lastIntNum;
+                    } else {
+                        lapDistance = 0;
+                        currentSectorIdx = 0;
+                    }
+                    
+                    if (currentSectorIdx >= 0 && currentSectorIdx < model.sectors.length) {
+                        const sectorNum = currentSectorIdx + 1;
+                        const sectorKey = 'S' + sectorNum + 'TIME';
+                        let sectorTimeSeconds = null;
+                        
+                        // Try cached time from storage
+                        const stnr = normalizeText(car.STNR);
+                        const cachedMs = storageData && storageData[stnr] && storageData[stnr][sectorKey];
+                        if (Number.isFinite(cachedMs) && cachedMs > 0) {
+                            sectorTimeSeconds = cachedMs / 1000;
+                        }
+                        
+                        // If no cached time, use average of completed sectors
+                        if (!Number.isFinite(sectorTimeSeconds)) {
+                            const completedTimes = [];
+                            for (let i = 0; i < currentSectorIdx; i++) {
+                                const t = parseTime(car['S' + (i + 1) + 'TIME']);
+                                if (Number.isFinite(t) && t > 0) {
+                                    completedTimes.push(t);
+                                }
+                            }
+                            if (completedTimes.length > 0) {
+                                sectorTimeSeconds = completedTimes.reduce((a, b) => a + b) / completedTimes.length;
+                            }
+                        }
+                        
+                        const lastIntTimeMs = toNumber(car.LASTIMTIME);
+                        
+                        if (Number.isFinite(sectorTimeSeconds) && sectorTimeSeconds > 0) {
+                            if (Number.isFinite(lastIntTimeMs) && lastIntTimeMs > 0) {
+                                const elapsedMs = Math.max(0, serverNowMs - lastIntTimeMs);
+                                const sectorTimeMs = sectorTimeSeconds * 1000;
+                                const progress = clamp(elapsedMs / sectorTimeMs, 0, 1);
+                                lapDistance += progress * model.sectors[currentSectorIdx];
+                            } else {
+                                lapDistance += 0.5 * model.sectors[currentSectorIdx];
+                            }
+                        }
+                    }
+                    
+                    const laps = toNumber(car.LAPS) ?? 0;
+                    const absoluteProgress = laps * model.trackLength + lapDistance;
+                    
+                    let estimatedSpeedMps = 200;
+                    const sectorTimes = [];
+                    for (let i = 0; i < model.sectors.length; i++) {
+                        const timeSeconds = parseTime(car['S' + (i + 1) + 'TIME']);
+                        if (Number.isFinite(timeSeconds) && timeSeconds > 0) {
+                            sectorTimes.push(timeSeconds);
+                        }
+                    }
+                    if (sectorTimes.length > 0) {
+                        const avgSectorSeconds = sectorTimes.reduce((a, b) => a + b) / sectorTimes.length;
+                        const avgSectorMeters = model.sectors[0];
+                        estimatedSpeedMps = avgSectorMeters / avgSectorSeconds;
+                    }
+                    
+                    return {
+                        progress: absoluteProgress,
+                        lapDistance,
+                        isExtrapolated: false,
+                        speedMps: estimatedSpeedMps
+                    };
+                }
+            `;
+
+            // Create a Blob and Worker from the code string
+            const blob = new Blob([workerCode], { type: 'application/javascript' });
+            const workerUrl = URL.createObjectURL(blob);
+            const worker = new Worker(workerUrl);
+            
+            return worker;
+        } catch (e) {
+            console.warn('Failed to create progress worker, will use main thread:', e);
+            return null;
+        }
+    }
+
+    let progressWorker = null;
+    let workerPending = false;
+
+    /**
+     * Build track model from payload
+     * Track structure: [Start/Finish (i10)] S1 [i1] S2 [i2] S3 [i3] S4 [i4] S5 [SF (i10)]
+     * - 5 sectors with their lengths (S1L, S2L, S3L, S4L, S5L)
+     * - 4 intermediates at sector boundaries: i1 (end of S1), i2, i3, i4
+     * - LASTINTERMEDIATENUMBER: 10=start/finish, 1=crossed i1 (in S2), 2=crossed i2 (in S3), etc
+     */
+    function getOrCreateModel(payload) {
         if (!payload) return null;
 
         const trackLength = NLS.toNumber(payload.TRACKLENGTH);
-        const segments = [];
-        const intermediateCount = NLS.toNumber(payload.NROFINTERMEDIATETIMES);
-        const lengths = [];
+        if (!Number.isFinite(trackLength)) return null;
 
-        for (let i = 1; i <= 9; i += 1) {
-            const seg = NLS.toNumber(payload[`S${i}L`]);
-            if (Number.isFinite(seg) && seg > 0) lengths.push(seg);
+        // Return cached model if same track
+        if (NLS._trackModelCache?.trackLength === trackLength) {
+            return NLS._trackModelCache;
         }
 
-        if (Number.isFinite(intermediateCount) && intermediateCount > 0) {
-            const expected = Math.min(lengths.length, intermediateCount + 1);
-            for (let i = 0; i < expected; i += 1) {
-                segments.push(lengths[i]);
-            }
-        } else {
-            segments.push(...lengths);
+        // Parse sector lengths
+        const sectors = [];
+        for (let i = 1; i <= 9; i++) {
+            const length = NLS.toNumber(payload[`S${i}L`]);
+            if (!Number.isFinite(length) || length <= 0) break;
+            sectors.push(length);
         }
 
-        if (!Number.isFinite(trackLength) || !segments.length) return null;
+        if (sectors.length === 0) return null;
 
+        // Build intermediate distances (at sector boundaries)
+        const intermediates = [];
+        let cumDistance = 0;
+        for (let i = 0; i < sectors.length - 1; i++) {
+            cumDistance += sectors[i];
+            intermediates.push(cumDistance);
+        }
+
+        // Build cumulative distances for reference
         const cumulative = [];
-        let sum = 0;
-        segments.forEach(seg => {
-            sum += seg;
-            cumulative.push(sum);
-        });
+        cumDistance = 0;
+        for (let i = 0; i < sectors.length; i++) {
+            cumDistance += sectors[i];
+            cumulative.push(cumDistance);
+        }
 
-        return {
+        const model = {
             trackLength,
-            segments,
-            cumulative
+            sectors,
+            intermediates,  // [2745, 5749, 11752, 21161] for Nürburgring
+            cumulative,     // [2745, 5749, 11752, 21161, 24358] for Nürburgring
         };
+
+        NLS._trackModelCache = model;
+        return model;
     }
 
     /**
-     * Compute a server-aligned timestamp adjusted by the local delay.
-     * @returns {number}
-     */
-    function getServerNowMs() {
-        const offset = Number(state.timeOffsetMs);
-        const delay = Number(state.delayMs) || 0;
-        return Number.isFinite(offset) ? Date.now() + offset - delay : Date.now() - delay;
-    }
-
-    /**
-     * Estimate per-car progress and speed along the track.
-     * @param {Record<string, unknown>} car
-     * @param {{trackLength:number, segments:number[], cumulative:number[]}} model
-     * @param {number} serverNowMs
-     * @returns {{progress:number, lapDistance:number, segmentDurationMs:number|null, segmentLength:number|null, isExtrapolated:boolean, speedMps:number} | null}
+     * Calculate car position on track with interpolation
+     * LASTINTERMEDIATENUMBER: 10 = start/finish (S1), 1-4 = sector boundaries (in S2-S5)
      */
     function computeCarProgress(car, model, serverNowMs) {
-        if (!model) return null;
+        if (!model || !car) return null;
 
-        const laps = NLS.toNumber(car.LAPS) ?? 0;
-        let lastIndex = NLS.toNumber(car.LASTINTERMEDIATENUMBER) ?? 0;
-
-        if (lastIndex >= 10) lastIndex = 0;
-
-        let checkpointDistance = 0;
-        if (lastIndex >= 1 && lastIndex <= model.cumulative.length) {
-            checkpointDistance = model.cumulative[lastIndex - 1];
-        } else if (lastIndex > model.cumulative.length) {
-            checkpointDistance = model.trackLength;
+        const lastIntNum = NLS.toNumber(car.LASTINTERMEDIATENUMBER) ?? 10;
+        
+        // Determine base position and current sector
+        let lapDistance = 0;
+        let currentSectorIdx = 0; // 0-indexed (0=S1, 1=S2, etc)
+        
+        if (lastIntNum === 10) {
+            // At start/finish line, in sector 1
+            lapDistance = 0;
+            currentSectorIdx = 0;
+        } else if (lastIntNum >= 1 && lastIntNum <= 4) {
+            // At intermediate N, so in sector N+1
+            lapDistance = model.intermediates[lastIntNum - 1];
+            currentSectorIdx = lastIntNum;
         }
-
-        const lastTimeMs = NLS.toNumber(car.LASTIMTIME);
-        const etaTimeMs = NLS.toNumber(car.ETA);
-        let nextSegment = 0;
-        let etaDistance = null;
-        let segmentDurationMs = null;
-
-        if (lastIndex >= 1 && lastIndex < model.segments.length) {
-            nextSegment = model.segments[lastIndex];
-        } else if (lastIndex === model.segments.length || lastIndex === 0) {
-            nextSegment = model.segments[0];
-        }
-
-        if (Number.isFinite(lastTimeMs) && Number.isFinite(etaTimeMs) && etaTimeMs > lastTimeMs) {
-            const rawDuration = etaTimeMs - lastTimeMs;
-            segmentDurationMs = rawDuration;
-            etaDistance = model.trackLength - checkpointDistance;
-            if (!(etaDistance > 0)) etaDistance = model.trackLength;
-        }
-
-        const carKey = NLS.normalizeText(car.STNR);
-        const cache = state.carKinematics.get(carKey) || {
-            lastAnchorServerMs: null,
-            lastLastTime: null,
-            learnedSpeedMps: null
-        };
-
-        const anchorAbs = laps * model.trackLength + checkpointDistance;
-
-        if (Number.isFinite(lastTimeMs) && lastTimeMs !== cache.lastLastTime) {
-            if (Number.isFinite(cache.lastAnchorServerMs)) {
-                const actualDurationMs = lastTimeMs - cache.lastAnchorServerMs;
-                const completedIndex = lastIndex === 0 ? model.segments.length : lastIndex;
-                const completedLength = model.segments[completedIndex - 1];
-                if (Number.isFinite(actualDurationMs) && actualDurationMs > 0 && Number.isFinite(completedLength) && completedLength > 0) {
-                    const actualSpeedMps = completedLength / (actualDurationMs / 1000);
-                    if (Number.isFinite(actualSpeedMps) && actualSpeedMps > 0) {
-                        const prevSpeed = cache.learnedSpeedMps;
-                        cache.learnedSpeedMps = Number.isFinite(prevSpeed)
-                            ? prevSpeed * 0.6 + actualSpeedMps * 0.4
-                            : actualSpeedMps;
+        
+        // Interpolate through current sector if we have timing data
+        if (currentSectorIdx >= 0 && currentSectorIdx < model.sectors.length) {
+            const sectorNum = currentSectorIdx + 1; // 1-indexed
+            const sectorKey = `S${sectorNum}TIME`;
+            let sectorTimeSeconds = null;
+            
+            // Try cached time from storage first (current sector time won't be available until it's completed)
+            const cachedMs = NLS.storage?.loadSectorTime(car.STNR, sectorKey);
+            if (Number.isFinite(cachedMs) && cachedMs > 0) {
+                sectorTimeSeconds = cachedMs / 1000;
+            }
+            
+            // If no cached time, use average of completed sectors
+            if (!Number.isFinite(sectorTimeSeconds)) {
+                const completedTimes = [];
+                for (let i = 0; i < currentSectorIdx; i++) {
+                    const t = NLS.parseTime(car[`S${i + 1}TIME`]);
+                    if (Number.isFinite(t) && t > 0) {
+                        completedTimes.push(t);
                     }
                 }
+                if (completedTimes.length > 0) {
+                    sectorTimeSeconds = completedTimes.reduce((a, b) => a + b) / completedTimes.length;
+                }
             }
-
-            cache.lastAnchorServerMs = lastTimeMs;
-            cache.lastLastTime = lastTimeMs;
+            
+            const lastIntTimeMs = NLS.toNumber(car.LASTIMTIME);
+            
+            if (Number.isFinite(sectorTimeSeconds) && sectorTimeSeconds > 0) {
+                if (Number.isFinite(lastIntTimeMs) && lastIntTimeMs > 0) {
+                    // Interpolate based on elapsed time since last intermediate
+                    const elapsedMs = Math.max(0, serverNowMs - lastIntTimeMs);
+                    const sectorTimeMs = sectorTimeSeconds * 1000;
+                    const progress = NLS.clamp(elapsedMs / sectorTimeMs, 0, 1);
+                    lapDistance += progress * model.sectors[currentSectorIdx];
+                } else {
+                    // No timestamp available, assume halfway through sector
+                    lapDistance += 0.5 * model.sectors[currentSectorIdx];
+                }
+            }
         }
 
-        const hasEta = Number.isFinite(segmentDurationMs) && segmentDurationMs > 0 && etaDistance > 0 && Number.isFinite(lastTimeMs);
 
-        const sectorIndex = lastIndex === 0 ? model.segments.length : lastIndex;
-        const sectorLength = model.segments[sectorIndex - 1] || nextSegment || null;
-        const sectorTimeSeconds = sectorIndex >= 1 && sectorIndex <= 9
-            ? NLS.parseTime(car[`S${sectorIndex}TIME`])
-            : Number.POSITIVE_INFINITY;
-        const sectorTimeMs = Number.isFinite(sectorTimeSeconds) && sectorTimeSeconds > 0
-            ? sectorTimeSeconds * 1000
-            : null;
-        const learnedDurationMs = Number.isFinite(cache.learnedSpeedMps) && cache.learnedSpeedMps > 0 && Number.isFinite(sectorLength) && sectorLength > 0
-            ? (sectorLength / cache.learnedSpeedMps) * 1000
-            : null;
-        const hasKinematic = Number.isFinite(sectorLength) && sectorLength > 0 && Number.isFinite(sectorTimeMs) && sectorTimeMs > 0 && Number.isFinite(lastTimeMs);
+        // Calculate absolute position including lap count
+        const laps = NLS.toNumber(car.LAPS) ?? 0;
+        const absoluteProgress = laps * model.trackLength + lapDistance;
 
-        if (!hasEta && !hasKinematic) return null;
-
-        const anchorBaseMs = Number.isFinite(cache.lastAnchorServerMs)
-            ? cache.lastAnchorServerMs
-            : serverNowMs;
-        const anchorAgeMs = Math.max(0, serverNowMs - anchorBaseMs);
-
-        let etaProgressAbs = null;
-        let etaSpeedMps = null;
-        let etaExtrapolated = false;
-        if (hasEta) {
-            etaSpeedMps = etaDistance / (segmentDurationMs / 1000);
-            const fraction = NLS.clamp(anchorAgeMs / segmentDurationMs, 0, 1);
-            etaProgressAbs = anchorAbs + fraction * etaDistance;
-            etaExtrapolated = anchorAgeMs > segmentDurationMs;
+        // Estimate speed from completed sector times
+        let estimatedSpeedMps = 200; // Default fallback
+        const sectorTimes = [];
+        for (let i = 0; i < model.sectors.length; i++) {
+            const timeSeconds = NLS.parseTime(car[`S${i + 1}TIME`]);
+            if (Number.isFinite(timeSeconds) && timeSeconds > 0) {
+                sectorTimes.push(timeSeconds);
+            }
         }
-
-        let kinProgressAbs = null;
-        let kinSpeedMps = null;
-        let kinExtrapolated = false;
-        if (hasKinematic) {
-            const kinDurationMs = Number.isFinite(learnedDurationMs) ? learnedDurationMs : sectorTimeMs;
-            kinSpeedMps = sectorLength / (kinDurationMs / 1000);
-            const fraction = NLS.clamp(anchorAgeMs / kinDurationMs, 0, 1);
-            kinProgressAbs = anchorAbs + fraction * sectorLength;
-            kinExtrapolated = anchorAgeMs > kinDurationMs;
+        if (sectorTimes.length > 0) {
+            const avgSectorSeconds = sectorTimes.reduce((a, b) => a + b) / sectorTimes.length;
+            const avgSectorMeters = model.sectors[0];
+            estimatedSpeedMps = avgSectorMeters / avgSectorSeconds;
         }
-
-        // Blend ETA-based and kinematic estimates as the segment ages.
-        let weightEta = 0;
-        let weightKin = 0;
-        if (hasEta && hasKinematic) {
-            const mix = NLS.clamp(anchorAgeMs / segmentDurationMs, 0, 1);
-            weightEta = 1 - mix;
-            weightKin = mix;
-        } else if (hasEta) {
-            weightEta = 1;
-        } else if (hasKinematic) {
-            weightKin = 1;
-        }
-
-        const weightSum = weightEta + weightKin || 1;
-        const progressAbs = (
-            (etaProgressAbs ?? 0) * weightEta +
-            (kinProgressAbs ?? 0) * weightKin
-        ) / weightSum;
-
-        const speedMps = (
-            (etaSpeedMps ?? 0) * weightEta +
-            (kinSpeedMps ?? 0) * weightKin
-        ) / weightSum;
-
-        const lapDistanceRaw = progressAbs - laps * model.trackLength;
-        const lapDistance = ((lapDistanceRaw % model.trackLength) + model.trackLength) % model.trackLength;
-        const isExtrapolated = etaExtrapolated || kinExtrapolated;
-
-        state.carKinematics.set(carKey, cache);
 
         return {
-            progress: progressAbs,
+            progress: absoluteProgress,
             lapDistance,
-            segmentDurationMs: hasEta ? segmentDurationMs : sectorTimeMs,
-            segmentLength: hasEta ? etaDistance : sectorLength,
-            isExtrapolated,
-            speedMps
+            isExtrapolated: false,
+            speedMps: estimatedSpeedMps
         };
     }
 
-    NLS.getTrackModel = getTrackModel;
+    /**
+     * Get current server time for position interpolation
+     * For replay: adds local elapsed time since payload received
+     * For live: uses synced real time
+     */
+    function getServerNowMs() {
+        const state = NLS.state || {};
+        const payload = state.latestPayload;
+        
+        if (payload?.TOD) {
+            // For replay: advance time based on local clock progression since payload arrival
+            const payloadTimeMs = NLS.toNumber(payload.TOD);
+            const payloadReceivedAtMs = state.payloadReceivedAtMs ?? Date.now();
+            const elapsedLocalMs = Date.now() - payloadReceivedAtMs;
+            
+            if (Number.isFinite(payloadTimeMs)) {
+                return payloadTimeMs + elapsedLocalMs;
+            }
+        }
+        
+        // For live data: use synced real time
+        return Date.now() + (state.timeOffsetMs || 0);
+    }
+
+    /**
+     * Get current sector for a car
+     * LASTINTERMEDIATENUMBER: 10 = sector 1, 1-4 = sector 2-5
+     */
+    function getCurrentSectorAndIntermediate(car, model) {
+        if (!model || !car) return null;
+
+        const lastIntNum = NLS.toNumber(car.LASTINTERMEDIATENUMBER) ?? 10;
+        
+        if (lastIntNum === 10) {
+            return { sectorIdx: 1, intermediateIdx: 0 };
+        }
+        
+        if (lastIntNum >= 1 && lastIntNum <= 4) {
+            return { sectorIdx: lastIntNum + 1, intermediateIdx: lastIntNum };
+        }
+        
+        // Fallback to sector 1
+        return { sectorIdx: 1, intermediateIdx: 0 };
+    }
+
+    /**
+     * Update progress cache for all cars (called at 30fps from animation loop)
+     * Uses Web Worker for computation when available, falls back to main thread
+     */
+    function updateAllCarProgress() {
+        const state = NLS.state || {};
+        const model = getOrCreateModel(state.latestPayload);
+        if (!model) return;
+
+        const serverNowMs = getServerNowMs();
+        const cars = state.cars || [];
+
+        // Initialize worker on first call
+        if (!progressWorker && !workerPending) {
+            workerPending = true;
+            progressWorker = initProgressWorker();
+            
+            if (progressWorker) {
+                progressWorker.onmessage = function(e) {
+                    const { results } = e.data;
+                    state.carProgress.clear();
+                    results.forEach(({ stnr, progress }) => {
+                        state.carProgress.set(stnr, progress);
+                    });
+                };
+                
+                progressWorker.onerror = function(err) {
+                    console.warn('Progress worker error, falling back to main thread:', err);
+                    progressWorker = null;
+                    workerPending = false;
+                };
+            } else {
+                workerPending = false;
+            }
+        }
+
+        // Use worker if available
+        if (progressWorker && !workerPending) {
+            try {
+                // Prepare storage data for worker (so it can access cached sector times)
+                const storageData = {};
+                cars.forEach(car => {
+                    const stnr = NLS.normalizeText(car.STNR);
+                    storageData[stnr] = {};
+                    for (let i = 1; i <= 5; i++) {
+                        const key = 'S' + i + 'TIME';
+                        const cached = NLS.storage?.loadSectorTime(stnr, i);
+                        if (cached) {
+                            storageData[stnr][key] = cached;
+                        }
+                    }
+                });
+
+                // Send to worker for computation
+                progressWorker.postMessage({ cars, model, serverNowMs, storageData });
+            } catch (e) {
+                console.warn('Error posting to worker:', e);
+                // Fall back to main thread
+                state.carProgress.clear();
+                cars.forEach(car => {
+                    const stnr = NLS.normalizeText(car.STNR);
+                    state.carProgress.set(stnr, computeCarProgress(car, model, serverNowMs));
+                });
+            }
+        } else {
+            // Main thread computation (fallback or if worker not available)
+            state.carProgress.clear();
+            cars.forEach(car => {
+                const stnr = NLS.normalizeText(car.STNR);
+                state.carProgress.set(stnr, computeCarProgress(car, model, serverNowMs));
+            });
+        }
+    }
+
+    /**
+     * Get cached progress for a car
+     */
+    function getCarProgress(car) {
+        const state = NLS.state || {};
+        const stnr = NLS.normalizeText(car.STNR);
+        return state.carProgress.get(stnr) || null;
+    }
+
+    /**
+     * Public API
+     */
+    NLS.getTrackModel = getOrCreateModel;
     NLS.getServerNowMs = getServerNowMs;
     NLS.computeCarProgress = computeCarProgress;
+    NLS.updateAllCarProgress = updateAllCarProgress;
+    NLS.getCarProgress = getCarProgress;
+    NLS.getCurrentSectorAndIntermediate = getCurrentSectorAndIntermediate;
+
 })();

@@ -1,0 +1,144 @@
+{
+  "timestamp": 1.818586,
+  "data": {
+    "PID": "0",
+    "RECNUM": "0",
+    "SND": "0",
+    "RCV": "0",
+    "VER": "2",
+    "EXPORTID": "20",
+    "HEATTYPE": "R",
+    "SESSION": "4600401101",
+    "NROFINTERMEDIATETIMES": "4",
+    "TRACKNAME": "N\u00fcrburgring",
+    "TRACKLENGTH": "24358",
+    "S1L": "2745",
+    "S2L": "3004",
+    "S3L": "6003",
+    "S4L": "9409",
+    "S5L": "3197",
+    "S6L": "0",
+    "S7L": "0",
+    "S8L": "0",
+    "S9L": "0",
+    "APL": "0",
+    "BEST": [
+      [
+        47,
+        "1:05.845",
+        919,
+        "240"
+      ],
+      [
+        47,
+        "1:02.902",
+        786,
+        "233"
+      ],
+      [
+        47,
+        "1:56.368",
+        47,
+        "207"
+      ],
+      [
+        47,
+        "3:01.407",
+        47,
+        "233"
+      ],
+      [
+        904,
+        "48.112",
+        0,
+        "0"
+      ],
+      [
+        0,
+        "00.000",
+        0,
+        "0"
+      ],
+      [
+        0,
+        "00.000",
+        0,
+        "0"
+      ],
+      [
+        0,
+        "00.000",
+        0,
+        "0"
+      ],
+      [
+        0,
+        "00.000",
+        0,
+        "0"
+      ],
+      [
+        0,
+        "00.000",
+        0,
+        "0"
+      ]
+    ],
+    "TRACKSTATE": "0",
+    "HEATNUMBER": "1",
+    "CUP": "N\u00fcrburgring Langstrecken-Serie",
+    "HEAT": "Rennen",
+    "TOD": "1775904005308","LASTINTERMEDIATENUMBER": "1"
+    "STQ": "0",
+    "RESULT": [
+      {
+        "POSITION": "1",
+        "RANK": "1",
+        "CLASSRANK": "1",
+        "CHG": "0",
+        "STNR": "47",
+        "ETA": "1775904062600",
+        "LAPS": "4",
+        "NAME": "Pittard",
+        "CLASSNAME": "SP9 PRO",
+        "CAR": "Mercedes-AMG GT3",
+        "ISQUA": "0",
+        "GAP": "----LAP 4",
+        "INT": "32:20.003",
+        "LASTLAPTIME": "8:04.118",
+        "LLTS": "0",
+        "FASTESTLAP": "8:03.660",
+        "FLTS": "2",
+        "PITSTOPCOUNT": "0",
+        "PITSUM": "000000.000",
+        "LASTINTERMEDIATENUMBER": "4",
+        "LASTIMTIME": "1775903997157",
+        "S1TIME": "1:12.110",
+        "ST1T": "0",
+        "S1SPEED": "233.7",
+        "ST1V": "0",
+        "S2TIME": "1:03.186",
+        "ST2T": "0",
+        "S2SPEED": "230.0",
+        "ST2V": "0",
+        "S3TIME": "1:56.471",
+        "ST3T": "0",
+        "S3SPEED": "207.4",
+        "ST3V": "0",
+        "S4TIME": "3:01.407",
+        "ST4T": "0",
+        "S4SPEED": "232.2",
+        "ST4V": "0",
+        "S5TIME": "",
+        "ST5T": "0",
+        "S5SPEED": "0.0",
+        "ST5V": "0",
+        "TOPSPEED": "0.0",
+        "TEAM": "KCMG",
+        "TPST": "",
+        "LLT": "3",
+        "LLC": "3"
+      }
+    ]
+  }
+}

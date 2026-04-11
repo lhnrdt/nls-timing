@@ -14,6 +14,7 @@
 // @require      file:///home/proto/dev/nls-timing/src/config.js
 // @require      file:///home/proto/dev/nls-timing/src/state.js
 // @require      file:///home/proto/dev/nls-timing/src/utils.js
+// @require      file:///home/proto/dev/nls-timing/src/storage.js
 // @require      file:///home/proto/dev/nls-timing/src/window-manager.js
 // @require      file:///home/proto/dev/nls-timing/src/track-model.js
 // @require      file:///home/proto/dev/nls-timing/src/overlay-main.js

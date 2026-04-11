@@ -97,6 +97,30 @@
                         const lastTime = NLS.toNumber(car.LASTIMTIME);
                         if (!Number.isFinite(lastTime)) return;
 
+                        // Store intermediate crossing time
+                        if (NLS.storage) {
+                            const nowMs = Date.now() + (state.timeOffsetMs || 0);
+                            
+                            // Store when this intermediate was crossed
+                            const lastIntNum = NLS.toNumber(car.LASTINTERMEDIATENUMBER);
+                            if (Number.isFinite(lastIntNum) && lastIntNum > 0) {
+                                if (!window.NLS.intermediateTimestamps) {
+                                    window.NLS.intermediateTimestamps = {};
+                                }
+                                const timestampKey = `${car.STNR}:INTERMEDIATE_${lastIntNum}`;
+                                window.NLS.intermediateTimestamps[timestampKey] = nowMs;
+                            }
+
+                            // Persist sector times for this car
+                            for (let i = 1; i <= 9; i++) {
+                                const timeKey = `S${i}TIME`;
+                                const timeSeconds = NLS.parseTime(car[timeKey]);
+                                if (Number.isFinite(timeSeconds) && timeSeconds > 0) {
+                                    NLS.storage.saveSectorTime(car.STNR, timeKey, timeSeconds * 1000);
+                                }
+                            }
+                        }
+
                         if (!state.timingInit.has(carKey)) {
                             state.timingInit.set(carKey, lastTime);
                             return;
@@ -108,6 +132,7 @@
                     });
 
                     state.latestPayload = p;
+                    state.payloadReceivedAtMs = Date.now();
                     state.cars = [...p.RESULT].sort((a, b) => {
                         const posA = NLS.toNumber(a.POSITION) ?? Number.POSITIVE_INFINITY;
                         const posB = NLS.toNumber(b.POSITION) ?? Number.POSITIVE_INFINITY;
@@ -122,6 +147,7 @@
 
                     NLS.renderMain();
                     NLS.renderRelative();
+                    NLS.renderTrackMap();
                 }
             } catch {}
         };

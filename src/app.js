@@ -62,12 +62,31 @@
     }
 
     /**
+     * Animation loop at 30fps to update car progress cache
+     */
+    function startAnimationLoop() {
+        let lastFrameTime = 0;
+        const frameIntervalMs = 1000 / 30; // 30fps
+
+        function animationFrame(nowMs) {
+            if (nowMs - lastFrameTime >= frameIntervalMs) {
+                NLS.updateAllCarProgress();
+                lastFrameTime = nowMs;
+            }
+            requestAnimationFrame(animationFrame);
+        }
+
+        requestAnimationFrame(animationFrame);
+    }
+
+    /**
      * Initialize overlays and start timers.
      */
     function start() {
         NLS.log('App start');
         tick();
         NLS.connect();
+        startAnimationLoop();
         setInterval(tick, 1000);
         setInterval(() => {
             if (!state.latestPayload) return;

@@ -246,26 +246,32 @@
         }
 
         if (state.relEstimateStatus && !state.relEstimateCompleted) {
-            const eligibleCars = state.cars.filter(car => !NLS.isRetired(car));
-            const total = eligibleCars.length;
-            const updated = eligibleCars.filter(car => state.timingUpdated.has(NLS.normalizeText(car.STNR))).length;
-            const percent = total > 0 ? Math.round((updated / total) * 100) : 0;
+            const trackModel = NLS.getTrackModel(state.latestPayload);
+            const numSectors = trackModel?.sectors?.length ?? 0;
+            const numCars = state.cars.length;
+            const totalPossible = numSectors * numCars;
 
-            if (percent >= 100) {
-                state.relEstimateStatus.textContent = 'done';
-                state.relEstimateStatus.style.color = '#22c55e';
-                state.relEstimateStatus.style.display = 'inline';
-                state.relEstimateCompleted = true;
-                window.setTimeout(() => {
-                    if (state.relEstimateStatus) {
-                        state.relEstimateStatus.style.display = 'none';
-                        state.relEstimateStatus.textContent = '';
-                    }
-                }, 1800);
-            } else {
-                state.relEstimateStatus.textContent = `Estimating... : ${percent}%`;
-                state.relEstimateStatus.style.color = '#fff';
-                state.relEstimateStatus.style.display = 'inline';
+            if (NLS.storage && totalPossible > 0) {
+                const stats = NLS.storage.getStats();
+                const cached = stats.sectorCount;
+                const percent = Math.round((cached / totalPossible) * 100);
+
+                if (percent >= 100) {
+                    state.relEstimateStatus.textContent = 'done';
+                    state.relEstimateStatus.style.color = '#22c55e';
+                    state.relEstimateStatus.style.display = 'inline';
+                    state.relEstimateCompleted = true;
+                    window.setTimeout(() => {
+                        if (state.relEstimateStatus) {
+                            state.relEstimateStatus.style.display = 'none';
+                            state.relEstimateStatus.textContent = '';
+                        }
+                    }, 1800);
+                } else {
+                    state.relEstimateStatus.textContent = `Cache: ${cached}/${totalPossible} (${percent}%)`;
+                    state.relEstimateStatus.style.color = '#fff';
+                    state.relEstimateStatus.style.display = 'inline';
+                }
             }
         }
 
@@ -286,8 +292,7 @@
         const selectedCar = state.cars[selectedIndex];
         const selectedLaps = NLS.toNumber(selectedCar.LAPS);
         const trackModel = NLS.getTrackModel(state.latestPayload);
-        const serverNowMs = NLS.getServerNowMs();
-        const selectedProgress = NLS.computeCarProgress(selectedCar, trackModel, serverNowMs);
+        const selectedProgress = NLS.getCarProgress(selectedCar);
 
         /**
          * Apply row background for lap deltas and selection highlight.
@@ -357,6 +362,8 @@
                     NLS.makeCell(car.CLASSNAME),
                     NLS.makeCell(car.LAPS, true),
                     NLS.makeCell('n/a', true),
+                    NLS.makeCell('n/a', true),
+                    NLS.makeCell('n/a', true),
                     NLS.makeCell(formatSpeedKph(null), true),
                     NLS.makeCell(relDisplay, true)
                 ];
@@ -365,13 +372,13 @@
                     cells[0].style.fontWeight = '700';
                     cells[1].style.fontWeight = '700';
                     cells[2].style.fontWeight = '700';
-                    cells[8].style.fontWeight = '700';
-                    cells[8].style.color = '#22c55e';
+                    cells[10].style.fontWeight = '700';
+                    cells[10].style.color = '#22c55e';
                 } else {
                     if (globalIndex < selectedIndex) {
-                        cells[8].style.color = '#facc15';
+                        cells[10].style.color = '#facc15';
                     } else {
-                        cells[8].style.color = '#93c5fd';
+                        cells[10].style.color = '#93c5fd';
                     }
                 }
 
@@ -398,7 +405,7 @@
         }
 
         const entries = state.cars.map((car, index) => {
-            const progressInfo = NLS.computeCarProgress(car, trackModel, serverNowMs);
+            const progressInfo = NLS.getCarProgress(car);
             const deltaTrack = progressInfo
                 ? signedTrackDelta(selectedProgress.lapDistance, progressInfo.lapDistance, trackModel.trackLength)
                 : null;

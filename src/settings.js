@@ -180,9 +180,55 @@
         delayRow.appendChild(delayInput);
         dotRow.appendChild(dotLabel);
         dotRow.appendChild(dotInput);
+
+        // Clear cache button
+        const cacheRow = document.createElement('div');
+        cacheRow.style.display = 'flex';
+        cacheRow.style.alignItems = 'center';
+        cacheRow.style.gap = '6px';
+        cacheRow.style.marginTop = '6px';
+        cacheRow.style.paddingTop = '6px';
+        cacheRow.style.borderTop = '1px solid rgba(255,255,255,0.2)';
+
+        const cacheBtn = document.createElement('button');
+        cacheBtn.type = 'button';
+        cacheBtn.textContent = 'Clear Cache';
+        cacheBtn.style.flex = '1';
+        cacheBtn.style.padding = '3px 6px';
+        cacheBtn.style.fontSize = '10px';
+        cacheBtn.style.background = 'rgba(255,100,100,0.3)';
+        cacheBtn.style.border = '1px solid rgba(255,100,100,0.5)';
+        cacheBtn.style.borderRadius = '3px';
+        cacheBtn.style.color = '#fff';
+        cacheBtn.style.cursor = 'pointer';
+        cacheBtn.title = 'Clear cached sector times for all cars';
+
+        cacheBtn.addEventListener('click', () => {
+            if (confirm('Clear cached sector times? You\'ll need to wait for timing data on reload.')) {
+                NLS.storage?.clearSectorTimesCache();
+                const stats = NLS.storage?.getStats();
+                alert('Cache cleared. Cache now: ' + (stats?.cacheSize || '0 KB'));
+            }
+        });
+
+        const cacheStats = document.createElement('span');
+        cacheStats.style.fontSize = '9px';
+        cacheStats.style.opacity = '0.7';
+        
+        function updateCacheStats() {
+            const stats = NLS.storage?.getStats();
+            cacheStats.textContent = stats ? `${stats.carCount} cars, ${stats.cacheSize}` : '';
+        }
+        updateCacheStats();
+        setInterval(updateCacheStats, 5000);
+
+        cacheRow.appendChild(cacheBtn);
+        cacheRow.appendChild(cacheStats);
+
         box.appendChild(header);
         box.appendChild(delayRow);
         box.appendChild(dotRow);
+        box.appendChild(cacheRow);
         player.appendChild(box);
 
         box.style.display = state.settingsOpen ? 'flex' : 'none';

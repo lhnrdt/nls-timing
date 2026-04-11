@@ -18,7 +18,7 @@
 
     NLS.CONFIG = {
         // Development mode - set to true to use localhost replay server
-        devMode: false,
+        devMode: true,
         devServerUrl: 'ws://localhost:9000/',
         
         // Production server

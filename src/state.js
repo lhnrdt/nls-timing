@@ -7,6 +7,8 @@
         ws: null,
         cars: [],
         latestPayload: null,
+        payloadReceivedAtMs: null,
+        carProgress: new Map(), // Cache of computed progress: STNR -> {progress, lapDistance, speedMps, etc}
         timeOffsetMs: 0,
         carKinematics: new Map(),
         leaderLap: null,
