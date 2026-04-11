@@ -7,7 +7,8 @@
         REL_BOX_ID: 'yt-nls-rel-box-20260321',
         MAP_BOX_ID: 'yt-nls-track-map-20260321',
         SETTINGS_BOX_ID: 'yt-nls-settings-box-20260321',
-        SETTINGS_TOGGLE_ID: 'yt-nls-settings-toggle-20260321'
+        SETTINGS_TOGGLE_ID: 'yt-nls-settings-toggle-20260321',
+        OVERLAY_MANAGER_ID: 'yt-nls-overlay-manager-20260321'
     };
 
     NLS.MATCH = {
@@ -16,7 +17,13 @@
     };
 
     NLS.CONFIG = {
+        // Development mode - set to true to use localhost replay server
+        devMode: false,
+        devServerUrl: 'ws://localhost:9000/',
+        
+        // Production server
         wsUrl: 'wss://livetiming.azurewebsites.net/',
+        
         eventId: '20',
         eventPid: [0, 4],
         enableLogging: true,

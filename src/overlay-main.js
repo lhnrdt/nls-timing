@@ -85,11 +85,26 @@
         box.style.padding = '8px';
         box.style.minWidth = '980px';
         box.style.maxWidth = '1100px';
+        box.style.maxHeight = '80vh';
+        box.style.display = 'flex';
+        box.style.flexDirection = 'column';
         box.style.fontFamily = 'Arial, sans-serif';
         box.style.fontSize = '11px';
         box.style.pointerEvents = 'auto';
         box.style.borderRadius = '6px';
         box.style.boxSizing = 'border-box';
+
+        const header = document.createElement('div');
+        header.style.display = 'flex';
+        header.style.justifyContent = 'space-between';
+        header.style.alignItems = 'center';
+        header.style.marginBottom = '6px';
+
+        const titleSpan = document.createElement('span');
+        titleSpan.textContent = 'Leaderboard';
+        titleSpan.style.fontWeight = 'bold';
+        titleSpan.style.fontSize = '12px';
+        header.appendChild(titleSpan);
 
         const status = document.createElement('div');
         status.style.fontSize = '12px';
@@ -102,6 +117,11 @@
         meta.style.opacity = '0.8';
         meta.style.marginBottom = '6px';
         meta.textContent = 'waiting...';
+
+        const tableWrapper = document.createElement('div');
+        tableWrapper.style.overflowY = 'auto';
+        tableWrapper.style.overflowX = 'hidden';
+        tableWrapper.style.flex = '1';
 
         const table = document.createElement('table');
         table.style.width = '100%';
@@ -136,15 +156,20 @@
 
         table.appendChild(thead);
         table.appendChild(tbody);
+        tableWrapper.appendChild(table);
 
+        box.appendChild(header);
         box.appendChild(status);
         box.appendChild(meta);
-        box.appendChild(table);
+        box.appendChild(tableWrapper);
         player.appendChild(box);
 
         state.mainStatus = status;
         state.mainMeta = meta;
         state.mainTbody = tbody;
+
+        // Setup window manager (draggable, resizable, hideable)
+        NLS.setupWindow(box, header, 'main_leaderboard', 980, 300);
 
         return box;
     }

@@ -14,10 +14,16 @@
         const settingsToggle = NLS.ensureSettingsToggle();
         const show = NLS.matches();
 
-        if (main) main.style.display = show ? 'block' : 'none';
-        if (rel) rel.style.display = show ? 'block' : 'none';
-        if (map) map.style.display = show ? 'block' : 'none';
-        if (settings) settings.style.display = show && state.settingsOpen ? 'block' : 'none';
+        // Check hidden state from localStorage
+        const mainHidden = localStorage.getItem('nls_main_leaderboard_hidden') === 'true';
+        const relHidden = localStorage.getItem('nls_relative_timing_hidden') === 'true';
+        const mapHidden = localStorage.getItem('nls_track_map_hidden') === 'true';
+        const settingsHidden = localStorage.getItem('nls_settings_panel_hidden') === 'true';
+
+        if (main) main.style.display = (show && !mainHidden) ? 'flex' : 'none';
+        if (rel) rel.style.display = (show && !relHidden) ? 'block' : 'none';
+        if (map) map.style.display = (show && !mapHidden) ? 'flex' : 'none';
+        if (settings) settings.style.display = (show && state.settingsOpen && !settingsHidden) ? 'flex' : 'none';
         if (settingsToggle) settingsToggle.style.display = show ? 'block' : 'none';
     }
 
@@ -30,7 +36,8 @@
         const map = NLS.ensureTrackMap();
         const settings = NLS.ensureSettingsOverlay();
         const settingsToggle = NLS.ensureSettingsToggle();
-        if (!main || !rel || !map || !settings || !settingsToggle) return;
+        const manager = NLS.ensureOverlayManager();
+        if (!main || !rel || !map || !settings || !settingsToggle || !manager) return;
 
         updateVisibility();
 
@@ -50,6 +57,7 @@
             if (map.parentElement !== player) player.appendChild(map);
             if (settings.parentElement !== player) player.appendChild(settings);
             if (settingsToggle.parentElement !== player) player.appendChild(settingsToggle);
+            if (manager.parentElement !== player) player.appendChild(manager);
         }
     }
 

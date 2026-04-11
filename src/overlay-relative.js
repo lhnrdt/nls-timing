@@ -45,6 +45,12 @@
         topRow.style.justifyContent = 'space-between';
         topRow.style.marginBottom = '6px';
 
+        const header = document.createElement('div');
+        header.style.display = 'flex';
+        header.style.alignItems = 'center';
+        header.style.gap = '12px';
+        header.style.flex = '1';
+
         const status = document.createElement('div');
         status.style.fontSize = '12px';
         status.style.fontWeight = '700';
@@ -57,6 +63,8 @@
         estimateStatus.style.opacity = '0.85';
         estimateStatus.style.display = 'none';
         status.appendChild(estimateStatus);
+
+        header.appendChild(status);
 
         const controls = document.createElement('div');
         controls.style.display = 'flex';
@@ -108,7 +116,7 @@
 
         controls.appendChild(label);
         controls.appendChild(input);
-        topRow.appendChild(status);
+        topRow.appendChild(header);
         topRow.appendChild(controls);
 
         const table = document.createElement('table');
@@ -154,6 +162,9 @@
         state.relEstimateStatus = estimateStatus;
         state.relInput = input;
         state.relTbody = tbody;
+
+        // Setup window manager (draggable, resizable, hideable)
+        NLS.setupWindow(box, header, 'relative_timing', 760, 300);
 
         return box;
     }

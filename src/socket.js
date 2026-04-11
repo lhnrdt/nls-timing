@@ -3,6 +3,17 @@
     const state = NLS.state;
 
     /**
+     * Get the WebSocket URL - uses dev server if devMode is enabled
+     */
+    function getWebSocketUrl() {
+        if (NLS.CONFIG.devMode) {
+            NLS.log('📡 Using dev replay server:', NLS.CONFIG.devServerUrl);
+            return NLS.CONFIG.devServerUrl;
+        }
+        return NLS.CONFIG.wsUrl;
+    }
+
+    /**
      * Connect to the timing websocket and stream updates into state.
      */
     function connect() {
@@ -14,8 +25,9 @@
 
         state.mainStatus.textContent = 'Status: connecting';
 
-        NLS.log('WS connecting', NLS.CONFIG.wsUrl);
-        state.ws = new WebSocket(NLS.CONFIG.wsUrl);
+        const wsUrl = getWebSocketUrl();
+        NLS.log('WS connecting', wsUrl);
+        state.ws = new WebSocket(wsUrl);
 
         state.ws.onopen = () => {
             state.mainStatus.textContent = 'Status: connected';

@@ -68,6 +68,11 @@
      * @returns {boolean}
      */
     function matches() {
+        // Allow on blank pages and file:// URLs for dev/testing
+        if (location.href === 'about:blank' || location.protocol === 'file:') {
+            return true;
+        }
+        
         const title = getTitle();
         const channel = getChannel();
 
@@ -82,11 +87,31 @@
      * @returns {Element|null}
      */
     function getPlayerContainer() {
-        return (
+        const player = (
             document.getElementById('movie_player') ||
             document.querySelector('.html5-video-player') ||
             document.querySelector('#player')
         );
+
+        if (player) return player;
+
+        // On dev/file pages without a player, create a container
+        if (location.protocol === 'file:' || location.href === 'about:blank') {
+            let container = document.getElementById('nls-dev-container');
+            if (!container) {
+                container = document.createElement('div');
+                container.id = 'nls-dev-container';
+                container.style.position = 'relative';
+                container.style.width = '100vw';
+                container.style.height = '100vh';
+                container.style.background = '#000';
+                container.style.zIndex = '1';
+                document.body.prepend(container);
+            }
+            return container;
+        }
+
+        return null;
     }
 
     /**

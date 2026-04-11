@@ -3,20 +3,24 @@
 // @namespace    https://github.com/lhnrdt/nls-timing
 // @version      1.1.2
 // @description  Stable gated NLS overlay with relative timing window
-// @match        https://www.youtube.com/*
+// @match        file:///*
+// @match        about:blank
+// @match        file:///home/proto/dev/nls-timing/*
 // @grant        GM_getResourceText
 // @run-at       document-idle
-// @resource     TRACKMAP https://raw.githubusercontent.com/lhnrdt/nls-timing/modularization/trackmap.svg
+// @resource     TRACKMAP file:///home/proto/dev/nls-timing/trackmap.svg
 // @updateURL    https://raw.githubusercontent.com/lhnrdt/nls-timing/modularization/tm-nls-timing.js
 // @downloadURL  https://raw.githubusercontent.com/lhnrdt/nls-timing/modularization/tm-nls-timing.js
-// @require      https://raw.githubusercontent.com/lhnrdt/nls-timing/modularization/src/config.js
-// @require      https://raw.githubusercontent.com/lhnrdt/nls-timing/modularization/src/state.js
-// @require      https://raw.githubusercontent.com/lhnrdt/nls-timing/modularization/src/utils.js
-// @require      https://raw.githubusercontent.com/lhnrdt/nls-timing/modularization/src/track-model.js
-// @require      https://raw.githubusercontent.com/lhnrdt/nls-timing/modularization/src/overlay-main.js
-// @require      https://raw.githubusercontent.com/lhnrdt/nls-timing/modularization/src/overlay-relative.js
-// @require      https://raw.githubusercontent.com/lhnrdt/nls-timing/modularization/src/track-map.js
-// @require      https://raw.githubusercontent.com/lhnrdt/nls-timing/modularization/src/settings.js
-// @require      https://raw.githubusercontent.com/lhnrdt/nls-timing/modularization/src/socket.js
-// @require      https://raw.githubusercontent.com/lhnrdt/nls-timing/modularization/src/app.js
+// @require      file:///home/proto/dev/nls-timing/src/config.js
+// @require      file:///home/proto/dev/nls-timing/src/state.js
+// @require      file:///home/proto/dev/nls-timing/src/utils.js
+// @require      file:///home/proto/dev/nls-timing/src/window-manager.js
+// @require      file:///home/proto/dev/nls-timing/src/track-model.js
+// @require      file:///home/proto/dev/nls-timing/src/overlay-main.js
+// @require      file:///home/proto/dev/nls-timing/src/overlay-relative.js
+// @require      file:///home/proto/dev/nls-timing/src/track-map.js
+// @require      file:///home/proto/dev/nls-timing/src/settings.js
+// @require      file:///home/proto/dev/nls-timing/src/overlay-manager.js
+// @require      file:///home/proto/dev/nls-timing/src/socket.js
+// @require      file:///home/proto/dev/nls-timing/src/app.js
 // ==/UserScript==

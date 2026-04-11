@@ -35,6 +35,23 @@
         box.style.background = 'rgba(0,0,0,0.45)';
         box.style.boxSizing = 'border-box';
         box.style.pointerEvents = 'auto';
+        box.style.display = 'flex';
+        box.style.flexDirection = 'column';
+
+        const header = document.createElement('div');
+        header.style.padding = '4px 8px';
+        header.style.background = 'rgba(0,0,0,0.5)';
+        header.style.fontSize = '11px';
+        header.style.fontWeight = 'bold';
+        header.style.color = '#fff';
+        header.style.textAlign = 'center';
+        header.textContent = 'Track Map';
+
+        const svgWrapper = document.createElement('div');
+        svgWrapper.style.flex = '1';
+        svgWrapper.style.display = 'flex';
+        svgWrapper.style.justifyContent = 'center';
+        svgWrapper.style.alignItems = 'center';
 
         const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
         svg.setAttribute('viewBox', '0 0 494 540');
@@ -56,7 +73,9 @@
         svg.appendChild(trackPath);
         svg.appendChild(markers);
         svg.appendChild(dots);
-        box.appendChild(svg);
+        svgWrapper.appendChild(svg);
+        box.appendChild(header);
+        box.appendChild(svgWrapper);
 
         player.appendChild(box);
         state.mapBox = box;
@@ -66,6 +85,9 @@
         state.mapMarkers = markers;
 
         ensureTrackSvgData();
+
+        // Setup window manager (draggable, resizable, hideable)
+        NLS.setupWindow(box, header, 'track_map', 300, 300);
 
         return box;
     }

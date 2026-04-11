@@ -86,6 +86,13 @@
         box.style.fontSize = '11px';
         box.style.pointerEvents = 'auto';
         box.style.boxSizing = 'border-box';
+        box.style.display = 'flex';
+        box.style.flexDirection = 'column';
+
+        const header = document.createElement('div');
+        header.style.fontWeight = 'bold';
+        header.style.marginBottom = '6px';
+        header.textContent = 'Settings';
 
         const delayRow = document.createElement('div');
         delayRow.style.display = 'flex';
@@ -173,13 +180,17 @@
         delayRow.appendChild(delayInput);
         dotRow.appendChild(dotLabel);
         dotRow.appendChild(dotInput);
+        box.appendChild(header);
         box.appendChild(delayRow);
         box.appendChild(dotRow);
         player.appendChild(box);
 
-        box.style.display = state.settingsOpen ? 'block' : 'none';
+        box.style.display = state.settingsOpen ? 'flex' : 'none';
 
         state.settingsBox = box;
+
+        // Setup window manager (draggable, resizable, hideable)
+        NLS.setupWindow(box, header, 'settings_panel', 200, 120);
 
         return box;
     }
