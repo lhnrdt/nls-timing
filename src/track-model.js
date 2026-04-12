@@ -78,7 +78,9 @@
             currentSectorIdx = lastIntNum;
         }
         
-        // Interpolate through current sector if we have timing data
+        // Calculate speed and interpolate through current sector if we have timing data
+        let estimatedSpeedMps = 200; // Default fallback
+        
         if (currentSectorIdx >= 0 && currentSectorIdx < model.sectors.length) {
             const sectorNum = currentSectorIdx + 1; // 1-indexed
             let sectorTimeSeconds = null;
@@ -94,38 +96,26 @@
             const lastIntTimeMs = NLS.toNumber(car.LASTIMTIME);
             
             if (Number.isFinite(sectorTimeSeconds) && sectorTimeSeconds > 0) {
+                // Calculate speed from current sector: distance / time
+                const sectorDistance = model.sectors[currentSectorIdx];
+                estimatedSpeedMps = sectorDistance / sectorTimeSeconds;
+                
                 if (Number.isFinite(lastIntTimeMs) && lastIntTimeMs > 0) {
                     // Interpolate based on elapsed time since last intermediate
                     const elapsedMs = Math.max(0, serverNowMs - lastIntTimeMs);
                     const sectorTimeMs = sectorTimeSeconds * 1000;
                     const progress = NLS.clamp(elapsedMs / sectorTimeMs, 0, 1);
-                    lapDistance += progress * model.sectors[currentSectorIdx];
+                    lapDistance += progress * sectorDistance;
                 } else {
                     // No timestamp available, assume halfway through sector
-                    lapDistance += 0.5 * model.sectors[currentSectorIdx];
+                    lapDistance += 0.5 * sectorDistance;
                 }
             }
         }
 
-
         // Calculate absolute position including lap count
         const laps = NLS.toNumber(car.LAPS) ?? 0;
         const absoluteProgress = laps * model.trackLength + lapDistance;
-
-        // Estimate speed from completed sector times
-        let estimatedSpeedMps = 200; // Default fallback
-        const sectorTimes = [];
-        for (let i = 0; i < model.sectors.length; i++) {
-            const timeSeconds = NLS.parseTime(car[`S${i + 1}TIME`]);
-            if (Number.isFinite(timeSeconds) && timeSeconds > 0) {
-                sectorTimes.push(timeSeconds);
-            }
-        }
-        if (sectorTimes.length > 0) {
-            const avgSectorSeconds = sectorTimes.reduce((a, b) => a + b) / sectorTimes.length;
-            const avgSectorMeters = model.sectors[0];
-            estimatedSpeedMps = avgSectorMeters / avgSectorSeconds;
-        }
 
         return {
             progress: absoluteProgress,
