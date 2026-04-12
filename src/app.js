@@ -62,16 +62,54 @@
     }
 
     /**
+     * Create or get FPS counter display
+     */
+    function ensureFpsCounter() {
+        if (state.fpsCounter) return state.fpsCounter;
+
+        const counter = document.createElement('div');
+        counter.id = 'nls-fps-counter';
+        counter.style.position = 'fixed';
+        counter.style.bottom = '10px';
+        counter.style.right = '10px';
+        counter.style.fontSize = '11px';
+        counter.style.fontFamily = 'monospace';
+        counter.style.color = '#0f0';
+        counter.style.background = 'rgba(0,0,0,0.7)';
+        counter.style.padding = '4px 8px';
+        counter.style.borderRadius = '3px';
+        counter.style.zIndex = '99999';
+        counter.style.pointerEvents = 'none';
+        counter.textContent = 'FPS: --';
+        
+        document.body.appendChild(counter);
+        state.fpsCounter = counter;
+        return counter;
+    }
+
+    /**
      * Animation loop at 30fps to update car progress cache
      */
     function startAnimationLoop() {
         let lastFrameTime = 0;
+        let frameCount = 0;
+        let lastFpsUpdateTime = 0;
         const frameIntervalMs = 1000 / 30; // 30fps
 
         function animationFrame(nowMs) {
             if (nowMs - lastFrameTime >= frameIntervalMs) {
                 NLS.updateAllCarProgress();
                 lastFrameTime = nowMs;
+                frameCount++;
+
+                // Update FPS counter every 500ms
+                if (nowMs - lastFpsUpdateTime >= 500) {
+                    const fps = Math.round((frameCount * 1000) / (nowMs - lastFpsUpdateTime + 1));
+                    const counter = ensureFpsCounter();
+                    counter.textContent = `FPS: ${fps}`;
+                    frameCount = 0;
+                    lastFpsUpdateTime = nowMs;
+                }
             }
             requestAnimationFrame(animationFrame);
         }

@@ -182,6 +182,18 @@ class WebSocketReplayServer:
         """Handle new WebSocket client connection."""
         print(f'Client connected from {websocket.remote_address}')
         self.clients.add(websocket)
+        
+        # Restart replay from beginning when a new client connects
+        print('Restarting replay from beginning for new client...')
+        # Cancel any existing replay tasks
+        for task in self.replay_tasks:
+            task.cancel()
+        self.replay_tasks.clear()
+        
+        # Start new replay from the beginning
+        task = asyncio.create_task(self.replay_messages())
+        self.replay_tasks.add(task)
+        task.add_done_callback(self.replay_tasks.discard)
 
         try:
             # Wait for client initialization message
@@ -219,9 +231,12 @@ class WebSocketReplayServer:
         finally:
             self.clients.discard(websocket)
             print(f'Client disconnected. {len(self.clients)} clients remaining.')
-            # Restart replay from beginning when a client connects/disconnects
+            # If clients remain, restart replay for them
             if self.clients:
-                print('Restarting replay from beginning for remaining clients...')
+                print('Restarting replay for remaining clients...')
+                for task in self.replay_tasks:
+                    task.cancel()
+                self.replay_tasks.clear()
                 task = asyncio.create_task(self.replay_messages())
                 self.replay_tasks.add(task)
                 task.add_done_callback(self.replay_tasks.discard)

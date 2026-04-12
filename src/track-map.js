@@ -149,14 +149,15 @@
     }
 
     /**
-     * Analyze track curvature and build a speed profile
-     * Returns a function that maps normalized progress (0-1) to actual progress accounting for curves
+     * Analyze track curvature and build sector-specific speed profiles
+     * Maps elapsed time → actual distance, accounting for variable speeds based on curvature
+     * Total sector time remains unchanged (matched to actual lap data)
      */
     function buildCurvatureProfile() {
-        if (!state.mapTrackPath || state.curvatureProfile) return;
+        if (!state.mapTrackPath || state.curveProfiles) return;
 
         const pathLength = state.mapTrackPath.getTotalLength();
-        const sampleDistance = 2; // Sample every 2px for detailed curvature
+        const sampleDistance = 50; // Sample every 50px to capture meaningful curves
         const samples = [];
 
         // Sample path points and angles
@@ -165,7 +166,7 @@
             samples.push({ length, x: point.x, y: point.y });
         }
 
-        // Calculate curvature (angle change per unit distance)
+        // Calculate curvature (angle change per unit distance) for each point
         const curvatures = [];
         for (let i = 0; i < samples.length; i++) {
             let curvature = 0;
@@ -187,53 +188,79 @@
                 while (angleDiff > Math.PI) angleDiff -= 2 * Math.PI;
                 while (angleDiff <= -Math.PI) angleDiff += 2 * Math.PI;
 
+                // Use absolute angle change as curvature
                 curvature = Math.abs(angleDiff);
             }
             curvatures.push(curvature);
         }
 
-        // Normalize curvatures to 0-1 range and invert (high curvature = slower speed)
-        const maxCurvature = Math.max(...curvatures, 0.1);
-        const speedProfile = curvatures.map(c => {
-            const normalizedCurvature = c / maxCurvature;
-            // Speed multiplier: straight sections (0 curvature) = 1.0x, curvy (1.0 curvature) = 0.65x
-            return 1.0 - (normalizedCurvature * 0.35);
+        // Use percentile-based normalization for better distribution
+        // This prevents one sharp curve from making everything else green
+        const sortedCurvatures = [...curvatures].sort((a, b) => a - b);
+        const p75Index = Math.floor(sortedCurvatures.length * 0.75);
+        const maxCurvature = sortedCurvatures[p75Index] || 0.1; // Use 75th percentile
+
+        const speedMultipliers = curvatures.map(c => {
+            const normalizedCurvature = Math.min(c / maxCurvature, 1.0);
+            return 1.0 - (normalizedCurvature * 0.35); // Range: 0.65x to 1.0x
         });
 
-        // Build cumulative "adjusted distance" map accounting for curvature
-        // Higher curvature = slower speed = more time spent = higher "adjusted distance"
-        const cumulativeAdjusted = [0];
+        // Build cumulative "time-weighted distance" to account for variable speeds
+        // Higher curvature = slower speed = more time needed = larger time-weighted distance
+        const timeWeightedDistance = [0];
         for (let i = 1; i < samples.length; i++) {
             const segmentLength = samples[i].length - samples[i - 1].length;
-            const avgSpeedMult = (speedProfile[i] + speedProfile[i - 1]) / 2;
-            // Adjusted distance is inversely proportional to speed (slower = longer effective distance)
-            const adjustedSegment = segmentLength / avgSpeedMult;
-            cumulativeAdjusted.push(cumulativeAdjusted[cumulativeAdjusted.length - 1] + adjustedSegment);
+            const avgSpeedMult = (speedMultipliers[i] + speedMultipliers[i - 1]) / 2;
+            // Time spent = distance / speed, so time-weighted distance = distance / speed
+            const timeWeight = segmentLength / avgSpeedMult;
+            timeWeightedDistance.push(timeWeightedDistance[timeWeightedDistance.length - 1] + timeWeight);
         }
 
-        const totalAdjusted = cumulativeAdjusted[cumulativeAdjusted.length - 1];
+        const totalTimeWeight = timeWeightedDistance[timeWeightedDistance.length - 1];
 
-        // Create interpolation function that maps normalized progress to path distance
-        state.curvatureProfile = {
+        state.curveProfiles = {
             samples,
-            speedProfile,
-            cumulativeAdjusted,
-            totalAdjusted,
+            speedMultipliers,
+            timeWeightedDistance,
+            totalTimeWeight,
             pathLength,
 
             /**
-             * Map normalized progress (0-1) to actual path distance accounting for curvature
-             * @param {number} normalizedProgress (0-1)
-             * @returns {number} actual distance on path
+             * Get speed multiplier (0.65-1.0) for a position along track
+             * @param {number} pathLength distance along path
+             * @returns {number} speed multiplier
              */
-            getDistanceForProgress(normalizedProgress) {
-                const targetAdjusted = normalizedProgress * totalAdjusted;
-
-                // Binary search to find position in cumulative adjusted
-                let left = 0, right = cumulativeAdjusted.length - 1;
+            getSpeedAt(pathLength) {
+                const clamped = NLS.clamp(pathLength, 0, this.pathLength);
+                let left = 0, right = samples.length - 1;
                 while (left < right - 1) {
                     const mid = Math.floor((left + right) / 2);
-                    if (cumulativeAdjusted[mid] <= targetAdjusted) {
+                    if (samples[mid].length <= clamped) {
+                        left = mid;
+                    } else {
+                        right = mid;
+                    }
+                }
+                const s1 = speedMultipliers[left];
+                const s2 = speedMultipliers[right];
+                const t = samples[left].length === samples[right].length ? 0 :
+                    (clamped - samples[left].length) / (samples[right].length - samples[left].length);
+                return s1 + (s2 - s1) * t;
+            },
+
+            /**
+             * Map elapsed time fraction to actual distance fraction, accounting for curvature
+             * @param {number} timeFraction (0-1) how much time has elapsed in sector
+             * @returns {number} actual distance fraction (0-1) accounting for variable speeds
+             */
+            getDistanceFractionForTime(timeFraction) {
+                const targetTimeWeight = timeFraction * totalTimeWeight;
+                
+                // Binary search to find position in time-weighted distance
+                let left = 0, right = timeWeightedDistance.length - 1;
+                while (left < right - 1) {
+                    const mid = Math.floor((left + right) / 2);
+                    if (timeWeightedDistance[mid] <= targetTimeWeight) {
                         left = mid;
                     } else {
                         right = mid;
@@ -242,26 +269,94 @@
 
                 const p1 = samples[left];
                 const p2 = samples[right];
-                const a1 = cumulativeAdjusted[left];
-                const a2 = cumulativeAdjusted[right];
+                const w1 = timeWeightedDistance[left];
+                const w2 = timeWeightedDistance[right];
 
-                // Linear interpolation
-                if (a1 === a2) return p1.length;
-                const t = (targetAdjusted - a1) / (a2 - a1);
-                return p1.length + (p2.length - p1.length) * t;
+                // Interpolate
+                if (w1 === w2) return p1.length / this.pathLength;
+                const t = (targetTimeWeight - w1) / (w2 - w1);
+                const pathPos = p1.length + (p2.length - p1.length) * t;
+                return pathPos / this.pathLength;
             }
         };
     }
 
     /**
-     * Get interpolated point on path using pre-sampled lookup table (O(log n) via binary search)
+     * Create a color based on speed multiplier (0.65-1.0)
+     * Green (fast, 1.0x) to Red (slow, 0.65x)
      */
-    function getPathPointFast(length) {
-        if (!state.pathSampleTable) buildPathSampleTable();
-        if (!state.pathSampleTable) return null;
+    function speedToColor(speedMult) {
+        // Normalize speed multiplier (0.65-1.0) to 0-1 range
+        const normalized = (speedMult - 0.65) / 0.35;
+        const clamped = NLS.clamp(normalized, 0, 1);
+        
+        // Interpolate from Red (slow) to Green (fast)
+        const r = Math.floor(255 * (1 - clamped));
+        const g = Math.floor(255 * clamped);
+        const b = 0;
+        
+        return `rgb(${r},${g},${b})`;
+    }
 
-        const samples = state.pathSampleTable;
-        const clamped = NLS.clamp(length, 0, state.pathLength);
+    /**
+     * Build the curvature-colored track visualization
+     */
+    function buildCurvatureTrackVisual() {
+        if (!state.mapTrackPath || !state.curveProfiles) return;
+        
+        const profile = state.curveProfiles;
+        const samples = profile.samples;
+        
+        if (!state.mapSvg || samples.length < 2) return;
+
+        // Remove old colored segments if they exist
+        if (state.mapCurvatureSegments) {
+            state.mapCurvatureSegments.querySelectorAll('line').forEach(line => line.remove());
+        } else {
+            state.mapCurvatureSegments = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+            // Insert AFTER the track path so colors are visible on top
+            if (state.mapTrackPath.nextSibling) {
+                state.mapSvg.insertBefore(state.mapCurvatureSegments, state.mapTrackPath.nextSibling);
+            } else {
+                state.mapSvg.appendChild(state.mapCurvatureSegments);
+            }
+        }
+
+        // Draw fine-grained colored segments by interpolating between coarse samples
+        const visualSampleDistance = 3; // Draw color every 3px for smooth gradient
+        const pathLength = state.mapTrackPath.getTotalLength();
+
+        for (let length = 0; length < pathLength; length += visualSampleDistance) {
+            const length2 = Math.min(length + visualSampleDistance, pathLength);
+            const p1 = state.mapTrackPath.getPointAtLength(length);
+            const p2 = state.mapTrackPath.getPointAtLength(length2);
+
+            // Get speed multiplier at this position via interpolation
+            const speedMult = getSpeedAtPathLength(profile, length);
+            const color = speedToColor(speedMult);
+
+            const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            line.setAttribute('x1', p1.x.toFixed(2));
+            line.setAttribute('y1', p1.y.toFixed(2));
+            line.setAttribute('x2', p2.x.toFixed(2));
+            line.setAttribute('y2', p2.y.toFixed(2));
+            line.setAttribute('stroke', color);
+            line.setAttribute('stroke-width', '2.8');
+            line.setAttribute('stroke-opacity', '0.9');
+            line.setAttribute('stroke-linecap', 'round');
+            line.setAttribute('stroke-linejoin', 'round');
+
+            state.mapCurvatureSegments.appendChild(line);
+        }
+    }
+
+    /**
+     * Get speed multiplier at a specific path length via interpolation
+     */
+    function getSpeedAtPathLength(profile, pathLength) {
+        const samples = profile.samples;
+        const speedMults = profile.speedMultipliers;
+        const clamped = NLS.clamp(pathLength, 0, profile.pathLength);
 
         // Binary search to find surrounding samples
         let left = 0, right = samples.length - 1;
@@ -274,19 +369,51 @@
             }
         }
 
-        const p1 = samples[left];
-        const p2 = samples[right];
-
-        // Linear interpolation between the two surrounding samples
-        if (p1.length === p2.length) {
-            return p1; // Same point (shouldn't happen)
+        const s1 = speedMults[left];
+        const s2 = speedMults[right];
+        
+        if (samples[left].length === samples[right].length) {
+            return s1;
         }
 
-        const t = (clamped - p1.length) / (p2.length - p1.length);
-        return {
-            x: p1.x + (p2.x - p1.x) * t,
-            y: p1.y + (p2.y - p1.y) * t
-        };
+        const t = (clamped - samples[left].length) / (samples[right].length - samples[left].length);
+        return s1 + (s2 - s1) * t;
+    }
+
+    /**
+     * Get interpolated point on path - caches getTotalLength and uses memoization for getPointAtLength
+     */
+    function getPathPointFast(length) {
+        if (!state.mapTrackPath) return null;
+
+        // Initialize cache on first use
+        if (!state.pathPointCache) {
+            state.pathPointCache = new Map();
+            if (!state.pathTotalLength) {
+                state.pathTotalLength = state.mapTrackPath.getTotalLength();
+            }
+        }
+
+        const pathLength = state.pathTotalLength || state.mapTrackPath.getTotalLength();
+        const clamped = NLS.clamp(length, 0, pathLength);
+        
+        // Use memoization with 1px precision (sub-pixel accuracy not needed)
+        const cacheKey = Math.round(clamped);
+        if (state.pathPointCache.has(cacheKey)) {
+            return state.pathPointCache.get(cacheKey);
+        }
+
+        // Call actual SVG method and cache result
+        const point = state.mapTrackPath.getPointAtLength(clamped);
+        state.pathPointCache.set(cacheKey, point);
+        
+        // Limit cache size to prevent memory bloat
+        if (state.pathPointCache.size > 5000) {
+            const firstKey = state.pathPointCache.keys().next().value;
+            state.pathPointCache.delete(firstKey);
+        }
+
+        return point;
     }
 
     /**
@@ -302,14 +429,21 @@
         const serverNowMs = NLS.getServerNowMs();
         const selected = state.selectedStartNumber.trim();
 
-        state.mapMarkers.replaceChildren();
-        state.mapDots.replaceChildren();
-
-        const pathLength = state.mapTrackPath.getTotalLength();
+        // Get cached path length
+        const pathLength = NLS.getPathTotalLength();
         if (!Number.isFinite(pathLength) || pathLength <= 0) return;
 
-        // Build sample table on first render
-        if (!state.pathSampleTable) buildPathSampleTable();
+        // Build curvature profile on first render
+        if (!state.curveProfiles) buildCurvatureProfile();
+        
+        // Build curvature-colored track visualization
+        if (state.curveProfiles && !state.mapCurvatureSegments) {
+            buildCurvatureTrackVisual();
+        }
+
+        // Batch DOM updates using DocumentFragment to minimize reflows
+        const markersFragment = document.createDocumentFragment();
+        const dotsFragment = document.createDocumentFragment();
 
         /**
          * Resolve a class color for a car class string.
@@ -351,7 +485,7 @@
          * @param {string} width
          * @param {number} size
          */
-        function addMarkerAtLength(length, color, width, size, tooltip) {
+        function addMarkerAtLength(fragment, length, color, width, size, tooltip) {
             const base = NLS.clamp(length, 0, pathLength);
             const p1 = getPathPointFast(base);
             const p2 = getPathPointFast(NLS.clamp(base + 1, 0, pathLength));
@@ -383,17 +517,16 @@
                 line.style.cursor = 'pointer';
             }
             
-            state.mapMarkers.appendChild(line);
+            fragment.appendChild(line);
         }
 
-        // Start/finish line.
-        addMarkerAtLength(0, 'rgba(0,255,100,0.8)', '3', 26, 'START/FINISH');
+        // Add markers and dots to fragments first (no DOM reflows)
+        addMarkerAtLength(markersFragment, 0, 'rgba(0,255,100,0.8)', '3', 26, 'START/FINISH');
 
-        // Timing sector markers (bigger).
         model.cumulative.forEach((distance, idx) => {
             const fraction = distance / model.trackLength;
             const sectorNum = idx + 1;
-            addMarkerAtLength(fraction * pathLength, 'rgba(100,180,255,0.7)', '2.5', 20, `Sector ${sectorNum} End`);
+            addMarkerAtLength(markersFragment, fraction * pathLength, 'rgba(100,180,255,0.7)', '2.5', 20, `Sector ${sectorNum} End`);
         });
 
         state.cars.forEach(car => {
@@ -419,7 +552,7 @@
                 halo.setAttribute('fill', 'none');
                 halo.setAttribute('stroke', '#22c55e');
                 halo.setAttribute('stroke-width', '2');
-                state.mapDots.appendChild(halo);
+                dotsFragment.appendChild(halo);
             }
 
             const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
@@ -457,10 +590,23 @@
                 NLS.renderRelative();
                 renderTrackMap();
             });
-            state.mapDots.appendChild(dot);
+            dotsFragment.appendChild(dot);
         });
+
+        // Batch update DOM: clear and append all at once (single reflow)
+        state.mapMarkers.replaceChildren(markersFragment);
+        state.mapDots.replaceChildren(dotsFragment);
     }
 
     NLS.ensureTrackMap = ensureTrackMap;
     NLS.renderTrackMap = renderTrackMap;
+    NLS.buildCurvatureProfile = buildCurvatureProfile;
+    NLS.getCurveProfiles = () => state.curveProfiles;
+    NLS.getPathTotalLength = () => {
+        if (!state.mapTrackPath) return 0;
+        if (!state.pathTotalLength) {
+            state.pathTotalLength = state.mapTrackPath.getTotalLength();
+        }
+        return state.pathTotalLength;
+    };
 })();
