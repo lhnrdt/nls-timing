@@ -47,7 +47,7 @@
 
     /**
      * Canvas-based track map renderer
-     * - Track visualization with curvature-based coloring
+     * - Track visualization
      * - Start/finish and sector markers
      * - Car position dots
      * - Hover tooltips for interactive feedback
@@ -274,6 +274,12 @@
                 if (state.relInput) state.relInput.value = state.selectedStartNumber;
                 NLS.renderRelative();
                 renderTrackMap();
+
+                // Show speed profile for this car
+                const car = state.cars.find(c => NLS.normalizeText(c.STNR) === state.mapHoveredCar.stnr);
+                if (car && NLS.showSpeedProfile) {
+                    NLS.showSpeedProfile(car);
+                }
             }
         });
     }
@@ -500,155 +506,28 @@
     }
 
     /**
-     * Analyze track curvature for speed-based coloring
-     */
-    function buildCurvatureProfile() {
-        if (state.curveProfiles || !state.mapPathData) return;
-
-        const pathData = state.mapPathData;
-        const points = pathData.points;
-        const pathLength = pathData.totalDist;
-        const sampleDistance = 50;
-
-        const samples = [];
-        for (let i = 0; i < points.length; i += Math.max(1, Math.floor(points.length / (pathLength / sampleDistance)))) {
-            samples.push(points[i]);
-        }
-
-        // Calculate curvature
-        const curvatures = [];
-        for (let i = 0; i < samples.length; i++) {
-            let curvature = 0;
-            if (i > 0 && i < samples.length - 1) {
-                const p0 = samples[i - 1];
-                const p1 = samples[i];
-                const p2 = samples[i + 1];
-
-                const dx1 = p1.x - p0.x;
-                const dy1 = p1.y - p0.y;
-                const dx2 = p2.x - p1.x;
-                const dy2 = p2.y - p1.y;
-
-                const angle1 = Math.atan2(dy1, dx1);
-                const angle2 = Math.atan2(dy2, dx2);
-                let angleDiff = angle2 - angle1;
-
-                while (angleDiff > Math.PI) angleDiff -= 2 * Math.PI;
-                while (angleDiff <= -Math.PI) angleDiff += 2 * Math.PI;
-
-                curvature = Math.abs(angleDiff);
-            }
-            curvatures.push(curvature);
-        }
-
-        // Normalize with 75th percentile
-        const sortedCurvatures = [...curvatures].sort((a, b) => a - b);
-        const p75Index = Math.floor(sortedCurvatures.length * 0.75);
-        const maxCurvature = sortedCurvatures[p75Index] || 0.1;
-
-        // Disable curvature-based speed multipliers for now - use uniform speed
-        const speedMultipliers = curvatures.map(c => 1.0);
-
-        // Build time-weighted distance (uniform speed = linear distance)
-        const timeWeightedDistance = [0];
-        for (let i = 1; i < samples.length; i++) {
-            const segmentDist = samples[i].dist - samples[i - 1].dist;
-            // Using uniform speed of 1.0, so time = distance
-            timeWeightedDistance.push(timeWeightedDistance[timeWeightedDistance.length - 1] + segmentDist);
-        }
-
-        const totalTimeWeight = timeWeightedDistance[timeWeightedDistance.length - 1];
-
-        state.curveProfiles = {
-            samples,
-            speedMultipliers,
-            timeWeightedDistance,
-            totalTimeWeight,
-            pathLength,
-
-            getSpeedAt(dist) {
-                const clamped = NLS.clamp(dist, 0, this.pathLength);
-                let left = 0, right = samples.length - 1;
-                while (left < right - 1) {
-                    const mid = Math.floor((left + right) / 2);
-                    if (samples[mid].dist <= clamped) {
-                        left = mid;
-                    } else {
-                        right = mid;
-                    }
-                }
-                const s1 = speedMultipliers[left];
-                const s2 = speedMultipliers[right];
-                const t = samples[left].dist === samples[right].dist ? 0 :
-                    (clamped - samples[left].dist) / (samples[right].dist - samples[left].dist);
-                return s1 + (s2 - s1) * t;
-            },
-
-            getDistanceFractionForTime(timeFraction) {
-                const targetTimeWeight = timeFraction * totalTimeWeight;
-                let left = 0, right = timeWeightedDistance.length - 1;
-                while (left < right - 1) {
-                    const mid = Math.floor((left + right) / 2);
-                    if (timeWeightedDistance[mid] <= targetTimeWeight) {
-                        left = mid;
-                    } else {
-                        right = mid;
-                    }
-                }
-                const p1 = samples[left];
-                const p2 = samples[right];
-                const w1 = timeWeightedDistance[left];
-                const w2 = timeWeightedDistance[right];
-                if (w1 === w2) return p1.dist / this.pathLength;
-                const t = (targetTimeWeight - w1) / (w2 - w1);
-                const pathPos = p1.dist + (p2.dist - p1.dist) * t;
-                return pathPos / this.pathLength;
-            }
-        };
-    }
-
-    /**
-     * Convert speed multiplier to RGB color (red=slow, green=fast)
-     */
-    function speedToColor(speedMult) {
-        const normalized = (speedMult - 0.65) / 0.35;
-        const clamped = NLS.clamp(normalized, 0, 1);
-        const r = Math.floor(255 * (1 - clamped));
-        const g = Math.floor(255 * clamped);
-        return `rgb(${r},${g},0)`;
-    }
-
-    /**
-     * Draw curvature-colored track on canvas
+     * Draw track on canvas with simple gray coloring
      */
     function drawTrack(ctx, pathData) {
         if (!pathData) return;
 
-        const profile = state.curveProfiles;
-        if (!profile) return;
-
-        // Draw colored segments
+        // Draw track segments in simple gray
         ctx.lineWidth = 2.8;
         ctx.lineCap = 'round';
         ctx.lineJoin = 'round';
+        ctx.strokeStyle = 'rgba(100, 100, 100, 0.6)';
+        ctx.globalAlpha = 0.9;
 
-        const visualSampleDistance = 3;
         const points = pathData.points;
-
-        for (let i = 0; i < points.length - 1; i += Math.max(1, Math.ceil(visualSampleDistance / (pathData.totalDist / points.length)))) {
-            const p1 = points[i];
-            const p2 = points[Math.min(i + 1, points.length - 1)];
-
-            const color = speedToColor(profile.getSpeedAt(p1.dist));
-            ctx.strokeStyle = color;
-            ctx.globalAlpha = 0.9;
-
-            ctx.beginPath();
-            ctx.moveTo(p1.x, p1.y);
-            ctx.lineTo(p2.x, p2.y);
-            ctx.stroke();
+        ctx.beginPath();
+        for (let i = 0; i < points.length; i++) {
+            if (i === 0) {
+                ctx.moveTo(points[i].x, points[i].y);
+            } else {
+                ctx.lineTo(points[i].x, points[i].y);
+            }
         }
-
+        ctx.stroke();
         ctx.globalAlpha = 1.0;
     }
 
@@ -732,7 +611,6 @@
         if (!state.mapPathData && state.mapSvgData) {
             const segments = parseSvgPath(state.mapSvgData.d);
             state.mapPathData = buildPathFromSegments(segments);
-            buildCurvatureProfile();
         }
 
         if (!state.mapPathData) return;
@@ -829,7 +707,5 @@
 
     NLS.ensureTrackMap = ensureTrackMap;
     NLS.renderTrackMap = renderTrackMap;
-    NLS.buildCurvatureProfile = buildCurvatureProfile;
-    NLS.getCurveProfiles = () => state.curveProfiles;
     NLS.getPathTotalLength = () => state.mapPathData?.totalDist || 0;
 })();

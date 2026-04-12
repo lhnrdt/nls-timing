@@ -37,7 +37,8 @@
         const settings = NLS.ensureSettingsOverlay();
         const settingsToggle = NLS.ensureSettingsToggle();
         const manager = NLS.ensureOverlayManager();
-        if (!main || !rel || !map || !settings || !settingsToggle || !manager) return;
+        const speedProfile = NLS.ensureSpeedProfileOverlay();
+        if (!main || !rel || !map || !settings || !settingsToggle || !manager || !speedProfile) return;
 
         updateVisibility();
 
@@ -58,6 +59,7 @@
             if (settings.parentElement !== player) player.appendChild(settings);
             if (settingsToggle.parentElement !== player) player.appendChild(settingsToggle);
             if (manager.parentElement !== player) player.appendChild(manager);
+            if (speedProfile.parentElement !== player) player.appendChild(speedProfile);
         }
     }
 

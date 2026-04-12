@@ -22,6 +22,7 @@
 // @require      file:///home/proto/dev/nls-timing/src/track-map.js
 // @require      file:///home/proto/dev/nls-timing/src/settings.js
 // @require      file:///home/proto/dev/nls-timing/src/overlay-manager.js
+// @require      file:///home/proto/dev/nls-timing/src/speed-profile.js
 // @require      file:///home/proto/dev/nls-timing/src/socket.js
 // @require      file:///home/proto/dev/nls-timing/src/app.js
 // ==/UserScript==
