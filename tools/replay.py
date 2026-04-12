@@ -42,7 +42,7 @@ class WebSocketReplayServer:
         self.messages = []
         self.is_playing = False
         self.clients = set()
-        self.replay_tasks = set()
+        self.replay_task = None  # Single shared replay task
         self.shutdown_event = asyncio.Event()
 
     def load_data(self) -> bool:
@@ -136,40 +136,38 @@ class WebSocketReplayServer:
                     print(f'Error sending to client: {e}')
 
     async def replay_messages(self):
-        """Replay all recorded messages with timing."""
+        """Replay messages in real-time with recorded timing."""
         if not self.messages:
             print('No messages to replay')
             return
 
-        print(f'Starting replay (speed: {self.speed}x)...')
-        self.is_playing = True
+        print(f'Starting real-time replay (speed: {self.speed}x)...')
         
         try:
-            for i, msg_entry in enumerate(self.messages):
-                # Check for shutdown signal
-                if self.shutdown_event.is_set():
-                    print('Replay interrupted by shutdown')
-                    break
+            while not self.shutdown_event.is_set():
+                self.is_playing = True
+                
+                for i, msg_entry in enumerate(self.messages):
+                    # Check for shutdown signal
+                    if self.shutdown_event.is_set():
+                        return
 
-                if not self.clients:
-                    print('No clients connected, pausing replay...')
-                    break
+                    # Calculate delay: from previous message (or from start for first)
+                    prev_time = self.messages[i - 1]['timestamp'] if i > 0 else 0
+                    curr_time = msg_entry['timestamp']
+                    delay = (curr_time - prev_time) / self.speed
+                    
+                    if delay > 0:
+                        await asyncio.sleep(delay)
 
-                # Wait for the appropriate time before sending
-                if i > 0:
-                    prev_timestamp = self.messages[i - 1]['timestamp']
-                    curr_timestamp = msg_entry['timestamp']
-                    delay = (curr_timestamp - prev_timestamp) / self.speed
-                    await asyncio.sleep(max(0.01, delay))
+                    # Send message only if clients connected
+                    if self.clients:
+                        await self.broadcast_message(msg_entry['data'])
 
-                # Send message to all clients
-                await self.broadcast_message(msg_entry['data'])
-
-                if (i + 1) % 50 == 0:
-                    print(f'  Sent {i + 1}/{len(self.messages)} messages')
-
-            print('Replay finished!')
-            self.is_playing = False
+                # After one full cycle, loop
+                print('Replay cycle completed, looping...')
+                self.is_playing = False
+                await asyncio.sleep(0.1)
 
         except asyncio.CancelledError:
             print('Replay task cancelled')
@@ -182,18 +180,6 @@ class WebSocketReplayServer:
         """Handle new WebSocket client connection."""
         print(f'Client connected from {websocket.remote_address}')
         self.clients.add(websocket)
-        
-        # Restart replay from beginning when a new client connects
-        print('Restarting replay from beginning for new client...')
-        # Cancel any existing replay tasks
-        for task in self.replay_tasks:
-            task.cancel()
-        self.replay_tasks.clear()
-        
-        # Start new replay from the beginning
-        task = asyncio.create_task(self.replay_messages())
-        self.replay_tasks.add(task)
-        task.add_done_callback(self.replay_tasks.discard)
 
         try:
             # Wait for client initialization message
@@ -231,32 +217,19 @@ class WebSocketReplayServer:
         finally:
             self.clients.discard(websocket)
             print(f'Client disconnected. {len(self.clients)} clients remaining.')
-            # If clients remain, restart replay for them
-            if self.clients:
-                print('Restarting replay for remaining clients...')
-                for task in self.replay_tasks:
-                    task.cancel()
-                self.replay_tasks.clear()
-                task = asyncio.create_task(self.replay_messages())
-                self.replay_tasks.add(task)
-                task.add_done_callback(self.replay_tasks.discard)
 
     async def start_server(self):
         """Start the WebSocket replay server."""
         print(f'Starting WebSocket replay server on ws://0.0.0.0:{self.port}')
         print(f'Connect your app to: ws://localhost:{self.port}')
 
+        # Start the replay task immediately (before any clients connect)
+        self.replay_task = asyncio.create_task(self.replay_messages())
+
         async with serve(self.handle_client, 'localhost', self.port):
-            print('Server running. Waiting for clients...')
+            print('Server running. Replay running continuously...')
             
-            # Wait for first client to connect
-            while not self.clients:
-                await asyncio.sleep(0.5)
-
-            print('Client connected! Starting replay...')
-            await self.replay_messages()
-
-            # Keep server running and restart replay for new clients
+            # Keep server running indefinitely
             while not self.shutdown_event.is_set():
                 await asyncio.sleep(1)
 
@@ -275,15 +248,14 @@ class WebSocketReplayServer:
                 except Exception as e:
                     print(f'Error closing client: {e}')
         
-        # Cancel all replay tasks
-        if self.replay_tasks:
-            print(f"Cancelling {len(self.replay_tasks)} replay task(s)...")
-            for task in list(self.replay_tasks):
-                if not task.done():
-                    task.cancel()
-        
-            # Wait for tasks to complete
-            await asyncio.gather(*self.replay_tasks, return_exceptions=True)
+        # Cancel replay task
+        if self.replay_task and not self.replay_task.done():
+            print("Cancelling replay task...")
+            self.replay_task.cancel()
+            try:
+                await self.replay_task
+            except asyncio.CancelledError:
+                pass
         
         print("✓ Server shutdown complete")
 

@@ -4,8 +4,58 @@
     const { MAP_BOX_ID } = NLS.IDS;
 
     /**
-     * Ensure the track map overlay exists and is attached.
-     * @returns {HTMLDivElement|null}
+     * Single source of truth for car class colors
+     */
+    const CLASS_COLORS = {
+        // VLN Production - Muted
+        VT1: '#ffffffff',
+        VT2: '#ffffffff',
+        VT3: '#ffffffff',
+        V3: '#ffffffff',
+        V4: '#ffffffff',
+        V5: '#ffffffff',
+        V6: '#ffffffff',
+        
+        // SP classes - vibrant by displacement
+        SP2: '#ffffffff',    // Amber
+        SP3: '#ffffffff',    // Orange
+        SP4: '#ffffffff',    // Orange-red
+        SP5: '#ffffffff',    // Vibrant green
+        SP6: '#ffffffff',    // Teal
+        SP7: '#ffffffff',    // Cyan
+        SP8: '#0ea5e9',    // Sky blue
+        SP9: '#eb2525ff',    // Vibrant blue (GT3)
+        SP10: '#55f7a6ff',   // Vibrant purple (GT4)
+        SPPRO: '#ee4d0dff',  // Vibrant violet
+        SPX: '#d946ef',    // Vibrant magenta
+        
+        // Alternative fuel - Vibrant lime
+        AT: '#84cc16',
+        AT2: '#bffc15',
+        AT3: '#d4fc79',
+        
+        // Cup & Special - Gray/muted
+        CUP: '#0b4bb9ff',
+        TCR: '#858585ff',
+        OPC: '#646464ff',
+        BMW: '#ffffffff',
+        
+        // Gruppe H - Brown
+        H2: '#ffffffff',
+        H4: '#ffffffff'
+    };
+
+    /**
+     * Canvas-based track map renderer
+     * - Track visualization with curvature-based coloring
+     * - Start/finish and sector markers
+     * - Car position dots
+     * - Hover tooltips for interactive feedback
+     */
+
+    /**
+     * Ensure the track map canvas overlay exists and is attached
+     * @returns {HTMLCanvasElement|null}
      */
     function ensureTrackMap() {
         let box = document.getElementById(MAP_BOX_ID);
@@ -47,53 +97,190 @@
         header.style.textAlign = 'center';
         header.textContent = 'Track Map';
 
-        const svgWrapper = document.createElement('div');
-        svgWrapper.style.flex = '1';
-        svgWrapper.style.display = 'flex';
-        svgWrapper.style.justifyContent = 'center';
-        svgWrapper.style.alignItems = 'center';
+        const canvasWrapper = document.createElement('div');
+        canvasWrapper.style.flex = '1';
+        canvasWrapper.style.display = 'flex';
+        canvasWrapper.style.justifyContent = 'center';
+        canvasWrapper.style.alignItems = 'center';
+        canvasWrapper.style.position = 'relative';
 
-        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-        svg.setAttribute('viewBox', '0 0 494 540');
-        svg.setAttribute('width', '440');
-        svg.setAttribute('height', '440');
-        svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+        const canvas = document.createElement('canvas');
+        canvas.width = 494;
+        canvas.height = 540;
+        canvas.style.maxWidth = '100%';
+        canvas.style.maxHeight = '100%';
+        canvas.style.display = 'block';
 
-        const trackPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-        trackPath.setAttribute('fill', 'none');
-        trackPath.setAttribute('stroke', 'rgb(255,255,255)');
-        trackPath.setAttribute('stroke-width', '2.5');
-        trackPath.setAttribute('stroke-linecap', 'round');
-        trackPath.setAttribute('stroke-linejoin', 'round');
-        trackPath.setAttribute('d', state.mapSvgData?.d || '');
-
-        const markers = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-        const dots = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-
-        svg.appendChild(trackPath);
-        svg.appendChild(markers);
-        svg.appendChild(dots);
-        svgWrapper.appendChild(svg);
+        canvasWrapper.appendChild(canvas);
+        
+        // Create legend
+        const legend = document.createElement('div');
+        legend.style.padding = '6px 8px';
+        legend.style.background = 'rgba(0,0,0,0.3)';
+        legend.style.fontSize = '10px';
+        legend.style.color = '#fff';
+        legend.style.borderTop = '1px solid rgba(255,255,255,0.1)';
+        legend.style.display = 'grid';
+        legend.style.gridTemplateColumns = '1fr 1fr';
+        legend.style.gap = '4px';
+        
+        const classGroups = [
+            { label: 'VT1', color: CLASS_COLORS.VT1 },
+            { label: 'VT2', color: CLASS_COLORS.VT2 },
+            { label: 'VT3', color: CLASS_COLORS.VT3 },
+            { label: 'SP2', color: CLASS_COLORS.SP2 },
+            { label: 'SP3', color: CLASS_COLORS.SP3 },
+            { label: 'SP4', color: CLASS_COLORS.SP4 },
+            { label: 'SP5', color: CLASS_COLORS.SP5 },
+            { label: 'SP6', color: CLASS_COLORS.SP6 },
+            { label: 'SP7', color: CLASS_COLORS.SP7 },
+            { label: 'SP8', color: CLASS_COLORS.SP8 },
+            { label: 'SP9', color: CLASS_COLORS.SP9 },
+            { label: 'SP10', color: CLASS_COLORS.SP10 },
+            { label: 'AT', color: CLASS_COLORS.AT },
+            { label: 'CUP', color: CLASS_COLORS.CUP },
+            { label: 'H2', color: CLASS_COLORS.H2 },
+            { label: 'H4', color: CLASS_COLORS.H4 }
+        ];
+        
+        for (const item of classGroups) {
+            const div = document.createElement('div');
+            div.style.display = 'flex';
+            div.style.alignItems = 'center';
+            div.style.gap = '4px';
+            
+            const dot = document.createElement('span');
+            dot.style.width = '8px';
+            dot.style.height = '8px';
+            dot.style.borderRadius = '50%';
+            dot.style.backgroundColor = item.color;
+            dot.style.flexShrink = '0';
+            
+            const label = document.createElement('span');
+            label.textContent = item.label;
+            label.style.whiteSpace = 'nowrap';
+            
+            div.appendChild(dot);
+            div.appendChild(label);
+            legend.appendChild(div);
+        }
+        
         box.appendChild(header);
-        box.appendChild(svgWrapper);
-
+        box.appendChild(canvasWrapper);
+        box.appendChild(legend);
         player.appendChild(box);
+
         state.mapBox = box;
-        state.mapSvg = svg;
-        state.mapTrackPath = trackPath;
-        state.mapDots = dots;
-        state.mapMarkers = markers;
+        state.mapCanvas = canvas;
+        state.mapCtx = canvas.getContext('2d');
 
         ensureTrackSvgData();
 
         // Setup window manager (draggable, resizable, hideable)
         NLS.setupWindow(box, header, 'track_map', 300, 300);
 
+        // Add mouse move listener for hover tooltips
+        setupCanvasInteraction(canvas);
+
         return box;
     }
 
     /**
-     * Fetch the track map SVG and cache its path and viewbox data.
+     * Setup canvas interaction (hover tooltips, click selection)
+     */
+    function setupCanvasInteraction(canvas) {
+        const tooltip = document.createElement('div');
+        tooltip.style.position = 'fixed';
+        tooltip.style.background = 'rgba(0,0,0,0.9)';
+        tooltip.style.color = '#fff';
+        tooltip.style.padding = '6px 10px';
+        tooltip.style.borderRadius = '4px';
+        tooltip.style.fontSize = '11px';
+        tooltip.style.pointerEvents = 'none';
+        tooltip.style.zIndex = '10000';
+        tooltip.style.display = 'none';
+        tooltip.style.whiteSpace = 'pre-wrap';
+        tooltip.style.maxWidth = '250px';
+        tooltip.style.lineHeight = '1.4';
+        tooltip.style.border = '1px solid rgba(255,255,255,0.2)';
+        document.body.appendChild(tooltip);
+
+        state.mapTooltip = tooltip;
+        state.mapHoveredMarker = null;
+        state.mapHoveredCar = null;
+
+        canvas.addEventListener('mousemove', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const canvasX = (e.clientX - rect.left) * (canvas.width / rect.width);
+            const canvasY = (e.clientY - rect.top) * (canvas.height / rect.height);
+
+            let hoveredItem = null;
+            let hoveredText = '';
+
+            // Check if hovering over markers
+            if (state.mapMarkers) {
+                for (const marker of state.mapMarkers) {
+                    const dx = canvasX - marker.x;
+                    const dy = canvasY - marker.y;
+                    const dist = Math.hypot(dx, dy);
+                    if (dist <= 8) {
+                        hoveredItem = marker;
+                        hoveredText = marker.tooltip;
+                        break;
+                    }
+                }
+            }
+
+            // Check if hovering over cars
+            if (!hoveredItem && state.mapCars) {
+                for (const car of state.mapCars) {
+                    const dx = canvasX - car.x;
+                    const dy = canvasY - car.y;
+                    const dist = Math.hypot(dx, dy);
+                    const hoverRadius = car.isSelected ? car.radius + 3 : car.radius + 2;
+                    if (dist <= hoverRadius) {
+                        hoveredItem = car;
+                        hoveredText = car.tooltip;
+                        break;
+                    }
+                }
+            }
+
+            state.mapHoveredMarker = hoveredItem?.type === 'marker' ? hoveredItem : null;
+            state.mapHoveredCar = hoveredItem?.type === 'car' ? hoveredItem : null;
+            canvas.style.cursor = hoveredItem ? 'pointer' : 'default';
+
+            // Show/hide tooltip
+            if (hoveredText) {
+                tooltip.textContent = hoveredText;
+                tooltip.style.display = 'block';
+                tooltip.style.left = (e.clientX + 8) + 'px';
+                tooltip.style.top = (e.clientY + 8) + 'px';
+            } else {
+                tooltip.style.display = 'none';
+            }
+        });
+
+        canvas.addEventListener('mouseleave', () => {
+            tooltip.style.display = 'none';
+            state.mapHoveredMarker = null;
+            state.mapHoveredCar = null;
+            canvas.style.cursor = 'default';
+        });
+
+        canvas.addEventListener('click', (e) => {
+            if (state.mapHoveredCar) {
+                state.selectedStartNumber = state.mapHoveredCar.stnr;
+                if (state.relInput) state.relInput.value = state.selectedStartNumber;
+                NLS.renderRelative();
+                renderTrackMap();
+            }
+        });
+    }
+
+
+    /**
+     * Fetch track SVG and extract SVG path data for rendering
      */
     function ensureTrackSvgData() {
         if (state.mapSvgData || state.mapSvgLoading) return;
@@ -105,40 +292,19 @@
 
         state.mapSvgLoading = true;
         NLS.log('Track map load', resourceText ? 'TM resource' : url);
+        
         const loadSvgText = resourceText
             ? Promise.resolve(resourceText)
             : fetch(url).then(res => res.text());
 
         loadSvgText
             .then((svgText) => {
-                const svgMatch = svgText.match(/<svg[^>]*>/i);
                 const pathMatch = svgText.match(/<path[^>]*\sd=["']([^"']+)["'][^>]*>/i);
-                if (!svgMatch || !pathMatch) return;
+                if (!pathMatch) return;
 
-                const svgTag = svgMatch[0];
-                const d = pathMatch[1] || '';
-                const viewBoxMatch = svgTag.match(/viewBox=["']([^"']+)["']/i);
-                const widthMatch = svgTag.match(/width=["']([^"']+)["']/i);
-                const heightMatch = svgTag.match(/height=["']([^"']+)["']/i);
-                const viewBox = viewBoxMatch ? viewBoxMatch[1] : null;
-                const width = widthMatch ? widthMatch[1] : null;
-                const height = heightMatch ? heightMatch[1] : null;
-                const normalizedViewBox = viewBox || (width && height ? `0 0 ${width} ${height}` : null);
-
-                state.mapSvgData = {
-                    d,
-                    viewBox: normalizedViewBox,
-                    width,
-                    height
-                };
-
-                if (state.mapTrackPath) {
-                    state.mapTrackPath.setAttribute('d', d);
-                }
-                if (state.mapSvg && normalizedViewBox) {
-                    state.mapSvg.setAttribute('viewBox', normalizedViewBox);
-                }
-                NLS.log('Track map loaded');
+                state.mapSvgData = { d: pathMatch[1] || '' };
+                state.mapPathData = null; // Reset parsed path
+                NLS.log('Track map SVG loaded');
             })
             .catch((error) => {
                 NLS.log('Track map load failed', error);
@@ -149,24 +315,207 @@
     }
 
     /**
-     * Analyze track curvature and build sector-specific speed profiles
-     * Maps elapsed time → actual distance, accounting for variable speeds based on curvature
-     * Total sector time remains unchanged (matched to actual lap data)
+     * Parse SVG path string into movable commands and segments
+     * Converts SVG path format to drawable line segments
      */
-    function buildCurvatureProfile() {
-        if (!state.mapTrackPath || state.curveProfiles) return;
+    function parseSvgPath(pathString) {
+        if (!pathString) return [];
 
-        const pathLength = state.mapTrackPath.getTotalLength();
-        const sampleDistance = 50; // Sample every 50px to capture meaningful curves
-        const samples = [];
+        const segments = [];
+        let currentPoint = { x: 0, y: 0 };
+        
+        // Parse SVG path commands (M=move, L=line, H=horizontal, V=vertical, C=cubic bezier, Z=close)
+        const commandRegex = /([MmLlHhVvCcSsQqTtAaZz])|(-?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?)/g;
+        const matches = [...pathString.matchAll(commandRegex)];
 
-        // Sample path points and angles
-        for (let length = 0; length <= pathLength; length += sampleDistance) {
-            const point = state.mapTrackPath.getPointAtLength(length);
-            samples.push({ length, x: point.x, y: point.y });
+        let i = 0;
+        while (i < matches.length) {
+            const cmdMatch = matches[i];
+            const cmd = cmdMatch[0];
+
+            if (!cmd.match(/[A-Za-z]/)) {
+                i++;
+                continue;
+            }
+
+            const isRelative = cmd === cmd.toLowerCase() && cmd !== 'M';
+            const cmdUpper = cmd.toUpperCase();
+
+            // Helper to get next numbers
+            const getNumbers = (count) => {
+                const nums = [];
+                while (nums.length < count && i + 1 < matches.length) {
+                    i++;
+                    const m = matches[i];
+                    if (m[1]) break; // Hit next command
+                    const num = parseFloat(m[0]);
+                    if (!isNaN(num)) nums.push(num);
+                }
+                return nums;
+            };
+
+            switch (cmdUpper) {
+                case 'M': {
+                    const nums = getNumbers(2);
+                    if (nums.length >= 2) {
+                        const p = {
+                            x: isRelative ? currentPoint.x + nums[0] : nums[0],
+                            y: isRelative ? currentPoint.y + nums[1] : nums[1]
+                        };
+                        currentPoint = p;
+                        segments.push({ type: 'M', point: p });
+                    }
+                    break;
+                }
+                case 'L': {
+                    const nums = getNumbers(2);
+                    if (nums.length >= 2) {
+                        const p = {
+                            x: isRelative ? currentPoint.x + nums[0] : nums[0],
+                            y: isRelative ? currentPoint.y + nums[1] : nums[1]
+                        };
+                        segments.push({ type: 'L', from: currentPoint, to: p });
+                        currentPoint = p;
+                    }
+                    break;
+                }
+                case 'H': {
+                    const nums = getNumbers(1);
+                    if (nums.length >= 1) {
+                        const x = isRelative ? currentPoint.x + nums[0] : nums[0];
+                        const p = { x, y: currentPoint.y };
+                        segments.push({ type: 'L', from: currentPoint, to: p });
+                        currentPoint = p;
+                    }
+                    break;
+                }
+                case 'V': {
+                    const nums = getNumbers(1);
+                    if (nums.length >= 1) {
+                        const y = isRelative ? currentPoint.y + nums[0] : nums[0];
+                        const p = { x: currentPoint.x, y };
+                        segments.push({ type: 'L', from: currentPoint, to: p });
+                        currentPoint = p;
+                    }
+                    break;
+                }
+                case 'C': {
+                    const nums = getNumbers(6);
+                    if (nums.length >= 6) {
+                        const cp1 = {
+                            x: isRelative ? currentPoint.x + nums[0] : nums[0],
+                            y: isRelative ? currentPoint.y + nums[1] : nums[1]
+                        };
+                        const cp2 = {
+                            x: isRelative ? currentPoint.x + nums[2] : nums[2],
+                            y: isRelative ? currentPoint.y + nums[3] : nums[3]
+                        };
+                        const p = {
+                            x: isRelative ? currentPoint.x + nums[4] : nums[4],
+                            y: isRelative ? currentPoint.y + nums[5] : nums[5]
+                        };
+                        segments.push({ type: 'C', from: currentPoint, cp1, cp2, to: p });
+                        currentPoint = p;
+                    }
+                    break;
+                }
+                case 'Z': {
+                    segments.push({ type: 'Z' });
+                    break;
+                }
+                default:
+                    i++;
+            }
+            i++;
         }
 
-        // Calculate curvature (angle change per unit distance) for each point
+        return segments;
+    }
+
+    /**
+     * Convert parsed SVG path segments to drawable points with distances
+     */
+    function buildPathFromSegments(segments) {
+        const points = [];
+        let totalDist = 0;
+
+        for (const seg of segments) {
+            if (seg.type === 'M') {
+                points.push({ ...seg.point, dist: totalDist });
+            } else if (seg.type === 'L') {
+                const dx = seg.to.x - seg.from.x;
+                const dy = seg.to.y - seg.from.y;
+                const dist = Math.hypot(dx, dy);
+                totalDist += dist;
+                points.push({ ...seg.to, dist: totalDist });
+            } else if (seg.type === 'C') {
+                // Subdivide cubic bezier with adaptive sampling
+                const steps = Math.ceil(Math.hypot(seg.to.x - seg.from.x, seg.to.y - seg.from.y) / 2);
+                for (let t = 0; t <= 1; t += 1 / Math.max(1, steps)) {
+                    const mt = 1 - t;
+                    const x = mt * mt * mt * seg.from.x + 3 * mt * mt * t * seg.cp1.x + 3 * mt * t * t * seg.cp2.x + t * t * t * seg.to.x;
+                    const y = mt * mt * mt * seg.from.y + 3 * mt * mt * t * seg.cp1.y + 3 * mt * t * t * seg.cp2.y + t * t * t * seg.to.y;
+                    const dx = x - (points[points.length - 1]?.x ?? 0);
+                    const dy = y - (points[points.length - 1]?.y ?? 0);
+                    const dist = Math.hypot(dx, dy);
+                    totalDist += dist;
+                    points.push({ x, y, dist: totalDist });
+                }
+            }
+        }
+
+        return { points, totalDist };
+    }
+
+    /**
+     * Get point on path at given distance
+     */
+    function getPointAtDistance(pathData, targetDist) {
+        if (!pathData || pathData.points.length === 0) return null;
+        
+        const clamped = NLS.clamp(targetDist, 0, pathData.totalDist);
+        
+        // Binary search
+        let left = 0, right = pathData.points.length - 1;
+        while (left < right - 1) {
+            const mid = Math.floor((left + right) / 2);
+            if (pathData.points[mid].dist <= clamped) {
+                left = mid;
+            } else {
+                right = mid;
+            }
+        }
+
+        const p1 = pathData.points[left];
+        const p2 = pathData.points[right];
+
+        if (p1.dist === p2.dist) return p1;
+
+        const t = (clamped - p1.dist) / (p2.dist - p1.dist);
+        return {
+            x: p1.x + (p2.x - p1.x) * t,
+            y: p1.y + (p2.y - p1.y) * t,
+            dist: clamped
+        };
+    }
+
+    /**
+     * Analyze track curvature for speed-based coloring
+     */
+    function buildCurvatureProfile() {
+        if (state.curveProfiles || !state.mapPathData) return;
+
+        const pathData = state.mapPathData;
+        const points = pathData.points;
+        const pathLength = pathData.totalDist;
+        const sampleDistance = 50;
+
+        const samples = [];
+        for (let i = 0; i < points.length; i += Math.max(1, Math.floor(points.length / (pathLength / sampleDistance)))) {
+            samples.push(points[i]);
+        }
+
+        // Calculate curvature
         const curvatures = [];
         for (let i = 0; i < samples.length; i++) {
             let curvature = 0;
@@ -184,36 +533,28 @@
                 const angle2 = Math.atan2(dy2, dx2);
                 let angleDiff = angle2 - angle1;
 
-                // Normalize angle difference to (-π, π]
                 while (angleDiff > Math.PI) angleDiff -= 2 * Math.PI;
                 while (angleDiff <= -Math.PI) angleDiff += 2 * Math.PI;
 
-                // Use absolute angle change as curvature
                 curvature = Math.abs(angleDiff);
             }
             curvatures.push(curvature);
         }
 
-        // Use percentile-based normalization for better distribution
-        // This prevents one sharp curve from making everything else green
+        // Normalize with 75th percentile
         const sortedCurvatures = [...curvatures].sort((a, b) => a - b);
         const p75Index = Math.floor(sortedCurvatures.length * 0.75);
-        const maxCurvature = sortedCurvatures[p75Index] || 0.1; // Use 75th percentile
+        const maxCurvature = sortedCurvatures[p75Index] || 0.1;
 
-        const speedMultipliers = curvatures.map(c => {
-            const normalizedCurvature = Math.min(c / maxCurvature, 1.0);
-            return 1.0 - (normalizedCurvature * 0.35); // Range: 0.65x to 1.0x
-        });
+        // Disable curvature-based speed multipliers for now - use uniform speed
+        const speedMultipliers = curvatures.map(c => 1.0);
 
-        // Build cumulative "time-weighted distance" to account for variable speeds
-        // Higher curvature = slower speed = more time needed = larger time-weighted distance
+        // Build time-weighted distance (uniform speed = linear distance)
         const timeWeightedDistance = [0];
         for (let i = 1; i < samples.length; i++) {
-            const segmentLength = samples[i].length - samples[i - 1].length;
-            const avgSpeedMult = (speedMultipliers[i] + speedMultipliers[i - 1]) / 2;
-            // Time spent = distance / speed, so time-weighted distance = distance / speed
-            const timeWeight = segmentLength / avgSpeedMult;
-            timeWeightedDistance.push(timeWeightedDistance[timeWeightedDistance.length - 1] + timeWeight);
+            const segmentDist = samples[i].dist - samples[i - 1].dist;
+            // Using uniform speed of 1.0, so time = distance
+            timeWeightedDistance.push(timeWeightedDistance[timeWeightedDistance.length - 1] + segmentDist);
         }
 
         const totalTimeWeight = timeWeightedDistance[timeWeightedDistance.length - 1];
@@ -225,17 +566,12 @@
             totalTimeWeight,
             pathLength,
 
-            /**
-             * Get speed multiplier (0.65-1.0) for a position along track
-             * @param {number} pathLength distance along path
-             * @returns {number} speed multiplier
-             */
-            getSpeedAt(pathLength) {
-                const clamped = NLS.clamp(pathLength, 0, this.pathLength);
+            getSpeedAt(dist) {
+                const clamped = NLS.clamp(dist, 0, this.pathLength);
                 let left = 0, right = samples.length - 1;
                 while (left < right - 1) {
                     const mid = Math.floor((left + right) / 2);
-                    if (samples[mid].length <= clamped) {
+                    if (samples[mid].dist <= clamped) {
                         left = mid;
                     } else {
                         right = mid;
@@ -243,20 +579,13 @@
                 }
                 const s1 = speedMultipliers[left];
                 const s2 = speedMultipliers[right];
-                const t = samples[left].length === samples[right].length ? 0 :
-                    (clamped - samples[left].length) / (samples[right].length - samples[left].length);
+                const t = samples[left].dist === samples[right].dist ? 0 :
+                    (clamped - samples[left].dist) / (samples[right].dist - samples[left].dist);
                 return s1 + (s2 - s1) * t;
             },
 
-            /**
-             * Map elapsed time fraction to actual distance fraction, accounting for curvature
-             * @param {number} timeFraction (0-1) how much time has elapsed in sector
-             * @returns {number} actual distance fraction (0-1) accounting for variable speeds
-             */
             getDistanceFractionForTime(timeFraction) {
                 const targetTimeWeight = timeFraction * totalTimeWeight;
-                
-                // Binary search to find position in time-weighted distance
                 let left = 0, right = timeWeightedDistance.length - 1;
                 while (left < right - 1) {
                     const mid = Math.floor((left + right) / 2);
@@ -266,347 +595,241 @@
                         right = mid;
                     }
                 }
-
                 const p1 = samples[left];
                 const p2 = samples[right];
                 const w1 = timeWeightedDistance[left];
                 const w2 = timeWeightedDistance[right];
-
-                // Interpolate
-                if (w1 === w2) return p1.length / this.pathLength;
+                if (w1 === w2) return p1.dist / this.pathLength;
                 const t = (targetTimeWeight - w1) / (w2 - w1);
-                const pathPos = p1.length + (p2.length - p1.length) * t;
+                const pathPos = p1.dist + (p2.dist - p1.dist) * t;
                 return pathPos / this.pathLength;
             }
         };
     }
 
     /**
-     * Create a color based on speed multiplier (0.65-1.0)
-     * Green (fast, 1.0x) to Red (slow, 0.65x)
+     * Convert speed multiplier to RGB color (red=slow, green=fast)
      */
     function speedToColor(speedMult) {
-        // Normalize speed multiplier (0.65-1.0) to 0-1 range
         const normalized = (speedMult - 0.65) / 0.35;
         const clamped = NLS.clamp(normalized, 0, 1);
-        
-        // Interpolate from Red (slow) to Green (fast)
         const r = Math.floor(255 * (1 - clamped));
         const g = Math.floor(255 * clamped);
-        const b = 0;
-        
-        return `rgb(${r},${g},${b})`;
+        return `rgb(${r},${g},0)`;
     }
 
     /**
-     * Build the curvature-colored track visualization
+     * Draw curvature-colored track on canvas
      */
-    function buildCurvatureTrackVisual() {
-        if (!state.mapTrackPath || !state.curveProfiles) return;
-        
+    function drawTrack(ctx, pathData) {
+        if (!pathData) return;
+
         const profile = state.curveProfiles;
-        const samples = profile.samples;
-        
-        if (!state.mapSvg || samples.length < 2) return;
+        if (!profile) return;
 
-        // Remove old colored segments if they exist
-        if (state.mapCurvatureSegments) {
-            state.mapCurvatureSegments.querySelectorAll('line').forEach(line => line.remove());
-        } else {
-            state.mapCurvatureSegments = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-            // Insert AFTER the track path so colors are visible on top
-            if (state.mapTrackPath.nextSibling) {
-                state.mapSvg.insertBefore(state.mapCurvatureSegments, state.mapTrackPath.nextSibling);
-            } else {
-                state.mapSvg.appendChild(state.mapCurvatureSegments);
-            }
+        // Draw colored segments
+        ctx.lineWidth = 2.8;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+
+        const visualSampleDistance = 3;
+        const points = pathData.points;
+
+        for (let i = 0; i < points.length - 1; i += Math.max(1, Math.ceil(visualSampleDistance / (pathData.totalDist / points.length)))) {
+            const p1 = points[i];
+            const p2 = points[Math.min(i + 1, points.length - 1)];
+
+            const color = speedToColor(profile.getSpeedAt(p1.dist));
+            ctx.strokeStyle = color;
+            ctx.globalAlpha = 0.9;
+
+            ctx.beginPath();
+            ctx.moveTo(p1.x, p1.y);
+            ctx.lineTo(p2.x, p2.y);
+            ctx.stroke();
         }
 
-        // Draw fine-grained colored segments by interpolating between coarse samples
-        const visualSampleDistance = 3; // Draw color every 3px for smooth gradient
-        const pathLength = state.mapTrackPath.getTotalLength();
-
-        for (let length = 0; length < pathLength; length += visualSampleDistance) {
-            const length2 = Math.min(length + visualSampleDistance, pathLength);
-            const p1 = state.mapTrackPath.getPointAtLength(length);
-            const p2 = state.mapTrackPath.getPointAtLength(length2);
-
-            // Get speed multiplier at this position via interpolation
-            const speedMult = getSpeedAtPathLength(profile, length);
-            const color = speedToColor(speedMult);
-
-            const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-            line.setAttribute('x1', p1.x.toFixed(2));
-            line.setAttribute('y1', p1.y.toFixed(2));
-            line.setAttribute('x2', p2.x.toFixed(2));
-            line.setAttribute('y2', p2.y.toFixed(2));
-            line.setAttribute('stroke', color);
-            line.setAttribute('stroke-width', '2.8');
-            line.setAttribute('stroke-opacity', '0.9');
-            line.setAttribute('stroke-linecap', 'round');
-            line.setAttribute('stroke-linejoin', 'round');
-
-            state.mapCurvatureSegments.appendChild(line);
-        }
+        ctx.globalAlpha = 1.0;
     }
 
     /**
-     * Get speed multiplier at a specific path length via interpolation
+     * Get perpendicular direction at a point on path
      */
-    function getSpeedAtPathLength(profile, pathLength) {
-        const samples = profile.samples;
-        const speedMults = profile.speedMultipliers;
-        const clamped = NLS.clamp(pathLength, 0, profile.pathLength);
+    function getPerpendicularDirection(pathData, dist) {
+        const p1 = getPointAtDistance(pathData, dist);
+        const p2 = getPointAtDistance(pathData, dist + 1);
+        if (!p1 || !p2) return null;
 
-        // Binary search to find surrounding samples
-        let left = 0, right = samples.length - 1;
-        while (left < right - 1) {
-            const mid = Math.floor((left + right) / 2);
-            if (samples[mid].length <= clamped) {
-                left = mid;
-            } else {
-                right = mid;
-            }
-        }
-
-        const s1 = speedMults[left];
-        const s2 = speedMults[right];
-        
-        if (samples[left].length === samples[right].length) {
-            return s1;
-        }
-
-        const t = (clamped - samples[left].length) / (samples[right].length - samples[left].length);
-        return s1 + (s2 - s1) * t;
+        const dx = p2.x - p1.x;
+        const dy = p2.y - p1.y;
+        const len = Math.hypot(dx, dy) || 1;
+        return { nx: -dy / len, ny: dx / len };
     }
 
     /**
-     * Get interpolated point on path - caches getTotalLength and uses memoization for getPointAtLength
+     * Draw marker (perpendicular line at track distance)
      */
-    function getPathPointFast(length) {
-        if (!state.mapTrackPath) return null;
+    function drawMarker(ctx, pathData, dist, color, width, size) {
+        const p1 = getPointAtDistance(pathData, dist);
+        if (!p1) return;
 
-        // Initialize cache on first use
-        if (!state.pathPointCache) {
-            state.pathPointCache = new Map();
-            if (!state.pathTotalLength) {
-                state.pathTotalLength = state.mapTrackPath.getTotalLength();
-            }
-        }
+        const perp = getPerpendicularDirection(pathData, dist);
+        if (!perp) return;
 
-        const pathLength = state.pathTotalLength || state.mapTrackPath.getTotalLength();
-        const clamped = NLS.clamp(length, 0, pathLength);
-        
-        // Use memoization with 1px precision (sub-pixel accuracy not needed)
-        const cacheKey = Math.round(clamped);
-        if (state.pathPointCache.has(cacheKey)) {
-            return state.pathPointCache.get(cacheKey);
-        }
+        const half = size / 2;
+        const x1 = p1.x - perp.nx * half;
+        const y1 = p1.y - perp.ny * half;
+        const x2 = p1.x + perp.nx * half;
+        const y2 = p1.y + perp.ny * half;
 
-        // Call actual SVG method and cache result
-        const point = state.mapTrackPath.getPointAtLength(clamped);
-        state.pathPointCache.set(cacheKey, point);
-        
-        // Limit cache size to prevent memory bloat
-        if (state.pathPointCache.size > 5000) {
-            const firstKey = state.pathPointCache.keys().next().value;
-            state.pathPointCache.delete(firstKey);
-        }
+        ctx.strokeStyle = color;
+        ctx.lineWidth = width;
+        ctx.lineCap = 'round';
 
-        return point;
+        ctx.beginPath();
+        ctx.moveTo(x1, y1);
+        ctx.lineTo(x2, y2);
+        ctx.stroke();
+
+        // Store marker for hit detection
+        if (!state.mapMarkers) state.mapMarkers = [];
+        state.mapMarkers.push({
+            type: 'marker',
+            x: p1.x,
+            y: p1.y,
+            radius: size / 2,
+            tooltip: ''
+        });
     }
 
     /**
-     * Render car dots and markers on the SVG track map.
+     * Get class color for a car
+     */
+    function classColor(className) {
+        const text = NLS.normalizeText(className).toUpperCase();
+        const key = text.replace(/[^A-Z0-9]/g, '');
+        const prefixMatch = key.match(/^[A-Z]+\d+/);
+        const prefix = prefixMatch ? prefixMatch[0] : key;
+
+        if (CLASS_COLORS[prefix]) return CLASS_COLORS[prefix];
+        if (CLASS_COLORS[key]) return CLASS_COLORS[key];
+        return '#cbd5f5';
+    }
+
+    /**
+     * Main track map render function
      */
     function renderTrackMap() {
-        if (!state.mapDots || !state.mapMarkers || !state.mapTrackPath) return;
-        if (!state.latestPayload) return;
+        const canvas = state.mapCanvas;
+        const ctx = state.mapCtx;
+
+        if (!canvas || !ctx || !state.latestPayload) return;
 
         const model = NLS.getTrackModel(state.latestPayload);
         if (!model) return;
 
-        const serverNowMs = NLS.getServerNowMs();
+        // Parse SVG path on first render
+        if (!state.mapPathData && state.mapSvgData) {
+            const segments = parseSvgPath(state.mapSvgData.d);
+            state.mapPathData = buildPathFromSegments(segments);
+            buildCurvatureProfile();
+        }
+
+        if (!state.mapPathData) return;
+
+        // Clear canvas
+        ctx.fillStyle = 'rgba(0,0,0,0)';
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        const pathData = state.mapPathData;
+        const pathLength = pathData.totalDist;
         const selected = state.selectedStartNumber.trim();
 
-        // Get cached path length
-        const pathLength = NLS.getPathTotalLength();
-        if (!Number.isFinite(pathLength) || pathLength <= 0) return;
+        // Draw track with curvature coloring
+        drawTrack(ctx, pathData);
 
-        // Build curvature profile on first render
-        if (!state.curveProfiles) buildCurvatureProfile();
-        
-        // Build curvature-colored track visualization
-        if (state.curveProfiles && !state.mapCurvatureSegments) {
-            buildCurvatureTrackVisual();
+        // Clear and rebuild marker/car lists
+        state.mapMarkers = [];
+        state.mapCars = [];
+
+        // Draw start/finish marker
+        drawMarker(ctx, pathData, 0, 'rgba(0,255,100,0.8)', 3, 26);
+        if (state.mapMarkers.length > 0) {
+            state.mapMarkers[state.mapMarkers.length - 1].tooltip = 'START/FINISH';
         }
 
-        // Batch DOM updates using DocumentFragment to minimize reflows
-        const markersFragment = document.createDocumentFragment();
-        const dotsFragment = document.createDocumentFragment();
-
-        /**
-         * Resolve a class color for a car class string.
-         * @param {string} className
-         * @returns {string}
-         */
-        function classColor(className) {
-            const text = NLS.normalizeText(className).toUpperCase();
-            const key = text.replace(/[^A-Z0-9]/g, '');
-            const prefixMatch = key.match(/^[A-Z]+\d+/);
-            const prefix = prefixMatch ? prefixMatch[0] : key;
-
-            const palette = {
-                SP9: '#3b82f6',
-                SP10: '#8b5cf6',
-                SP8: '#f59e0b',
-                SP7: '#22c55e',
-                SP6: '#06b6d4',
-                SP5: '#10b981',
-                SP4: '#14b8a6',
-                SP3: '#ef4444',
-                SP2: '#eab308',
-                SP1: '#f97316',
-                CUP: '#9ca3af',
-                VT2: '#0ea5e9',
-                AT3: '#84cc16',
-                AT2: '#a3e635'
-            };
-
-            if (palette[prefix]) return palette[prefix];
-            if (palette[key]) return palette[key];
-            return '#cbd5f5';
-        }
-
-        /**
-         * Draw a perpendicular marker line at a track distance.
-         * @param {number} length
-         * @param {string} color
-         * @param {string} width
-         * @param {number} size
-         */
-        function addMarkerAtLength(fragment, length, color, width, size, tooltip) {
-            const base = NLS.clamp(length, 0, pathLength);
-            const p1 = getPathPointFast(base);
-            const p2 = getPathPointFast(NLS.clamp(base + 1, 0, pathLength));
-            if (!p1 || !p2) return;
-
-            const dx = p2.x - p1.x;
-            const dy = p2.y - p1.y;
-            const len = Math.hypot(dx, dy) || 1;
-            const nx = -dy / len;
-            const ny = dx / len;
-            const half = size / 2;
-            const x1 = p1.x - nx * half;
-            const y1 = p1.y - ny * half;
-            const x2 = p1.x + nx * half;
-            const y2 = p1.y + ny * half;
-            const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-            line.setAttribute('x1', x1.toFixed(2));
-            line.setAttribute('y1', y1.toFixed(2));
-            line.setAttribute('x2', x2.toFixed(2));
-            line.setAttribute('y2', y2.toFixed(2));
-            line.setAttribute('stroke', color);
-            line.setAttribute('stroke-width', width);
-            line.setAttribute('stroke-linecap', 'round');
-            
-            if (tooltip) {
-                const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
-                title.textContent = tooltip;
-                line.appendChild(title);
-                line.style.cursor = 'pointer';
-            }
-            
-            fragment.appendChild(line);
-        }
-
-        // Add markers and dots to fragments first (no DOM reflows)
-        addMarkerAtLength(markersFragment, 0, 'rgba(0,255,100,0.8)', '3', 26, 'START/FINISH');
-
+        // Draw sector markers
         model.cumulative.forEach((distance, idx) => {
             const fraction = distance / model.trackLength;
             const sectorNum = idx + 1;
-            addMarkerAtLength(markersFragment, fraction * pathLength, 'rgba(100,180,255,0.7)', '2.5', 20, `Sector ${sectorNum} End`);
+            const markerDist = fraction * pathLength;
+            drawMarker(ctx, pathData, markerDist, 'rgba(100,180,255,0.7)', 2.5, 20);
+            if (state.mapMarkers.length > 0) {
+                state.mapMarkers[state.mapMarkers.length - 1].tooltip = `Sector ${sectorNum} End`;
+            }
         });
 
+        // Draw car dots
         state.cars.forEach(car => {
             const progress = NLS.getCarProgress(car);
             if (!progress || !Number.isFinite(progress.lapDistance)) return;
 
             const fraction = progress.lapDistance / model.trackLength;
             if (!Number.isFinite(fraction)) return;
-            
-            const point = getPathPointFast(NLS.clamp(fraction, 0, 1) * pathLength);
+
+            const point = getPointAtDistance(pathData, NLS.clamp(fraction, 0, 1) * pathLength);
             if (!point) return;
 
-            const x = point.x;
-            const y = point.y;
             const isSelected = NLS.normalizeText(car.STNR) === selected;
-            const dotColor = classColor(car.CLASSNAME);
-
-            if (isSelected) {
-                const halo = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-                halo.setAttribute('cx', x.toFixed(2));
-                halo.setAttribute('cy', y.toFixed(2));
-                halo.setAttribute('r', '6');
-                halo.setAttribute('fill', 'none');
-                halo.setAttribute('stroke', '#22c55e');
-                halo.setAttribute('stroke-width', '2');
-                dotsFragment.appendChild(halo);
-            }
-
-            const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-            dot.setAttribute('cx', x.toFixed(2));
-            dot.setAttribute('cy', y.toFixed(2));
+            const color = classColor(car.CLASSNAME);
             const baseSize = NLS.clamp(Number(state.dotSize) || NLS.CONFIG.defaultDotSize, 1, 10);
             const radius = isSelected ? baseSize + 1 : baseSize;
-            dot.setAttribute('r', radius.toFixed(1));
-            dot.setAttribute('fill', dotColor);
-            dot.setAttribute('stroke', isSelected ? '#22c55e' : 'rgba(0,0,0,0.5)');
-            dot.setAttribute('stroke-width', '0.5');
-            dot.style.cursor = 'pointer';
-            dot.style.pointerEvents = 'auto';
 
-            // Add tooltip with car information
+            // Draw halo for selected car
+            if (isSelected) {
+                ctx.strokeStyle = '#22c55e';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.arc(point.x, point.y, radius + 2, 0, 2 * Math.PI);
+                ctx.stroke();
+            }
+
+            // Draw dot
+            ctx.fillStyle = color;
+            ctx.strokeStyle = isSelected ? '#22c55e' : 'rgba(0,0,0,0.5)';
+            ctx.lineWidth = 0.5;
+            ctx.beginPath();
+            ctx.arc(point.x, point.y, radius, 0, 2 * Math.PI);
+            ctx.fill();
+            ctx.stroke();
+
+            // Build car info for hit detection and tooltip
             const speedKmh = (progress.speedMps * 3.6).toFixed(1);
             const lapNum = NLS.toNumber(car.LAPS) ?? 0;
             const distanceKm = (progress.lapDistance / 1000).toFixed(2);
             const className = NLS.normalizeText(car.CLASSNAME);
             const stnr = NLS.normalizeText(car.STNR);
-            
+
             let tooltipText = `#${stnr} - ${className}\n`;
             tooltipText += `Lap ${lapNum}\n`;
             tooltipText += `Distance: ${distanceKm}km\n`;
             tooltipText += `Speed: ${speedKmh}km/h`;
-            
-            const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
-            title.textContent = tooltipText;
-            dot.appendChild(title);
 
-            dot.addEventListener('click', (event) => {
-                event.stopPropagation();
-                state.selectedStartNumber = NLS.normalizeText(car.STNR);
-                if (state.relInput) state.relInput.value = state.selectedStartNumber;
-                NLS.renderRelative();
-                renderTrackMap();
+            state.mapCars.push({
+                type: 'car',
+                x: point.x,
+                y: point.y,
+                radius,
+                isSelected,
+                stnr,
+                tooltip: tooltipText
             });
-            dotsFragment.appendChild(dot);
         });
-
-        // Batch update DOM: clear and append all at once (single reflow)
-        state.mapMarkers.replaceChildren(markersFragment);
-        state.mapDots.replaceChildren(dotsFragment);
     }
 
     NLS.ensureTrackMap = ensureTrackMap;
     NLS.renderTrackMap = renderTrackMap;
     NLS.buildCurvatureProfile = buildCurvatureProfile;
     NLS.getCurveProfiles = () => state.curveProfiles;
-    NLS.getPathTotalLength = () => {
-        if (!state.mapTrackPath) return 0;
-        if (!state.pathTotalLength) {
-            state.pathTotalLength = state.mapTrackPath.getTotalLength();
-        }
-        return state.pathTotalLength;
-    };
+    NLS.getPathTotalLength = () => state.mapPathData?.totalDist || 0;
 })();
