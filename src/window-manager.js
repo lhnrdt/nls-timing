@@ -16,6 +16,12 @@
 
         header.style.cursor = 'grab';
         header.addEventListener('mousedown', (e) => {
+            // Don't drag if clicking on interactive elements (input, button, label, etc)
+            const target = e.target;
+            if (target.tagName === 'INPUT' || target.tagName === 'BUTTON' || target.tagName === 'LABEL') {
+                return;
+            }
+            
             isDragging = true;
             initialX = e.clientX - box.offsetLeft;
             initialY = e.clientY - box.offsetTop;

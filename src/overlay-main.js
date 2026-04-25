@@ -2,6 +2,34 @@
     const NLS = window.NLS || (window.NLS = {});
     const state = NLS.state;
     const { MAIN_BOX_ID } = NLS.IDS;
+    
+    // Add webkit scrollbar styles for Chrome/Safari
+    if (!document.getElementById('nls_leaderboard_scrollbar_styles')) {
+        const style = document.createElement('style');
+        style.id = 'nls_leaderboard_scrollbar_styles';
+        style.textContent = `
+            #${MAIN_BOX_ID} > div:nth-child(4)::-webkit-scrollbar {
+                width: 8px;
+            }
+            #${MAIN_BOX_ID} > div:nth-child(4)::-webkit-scrollbar-track {
+                background: rgba(0, 0, 0, 0.2);
+            }
+            #${MAIN_BOX_ID} > div:nth-child(4)::-webkit-scrollbar-thumb {
+                background: rgba(150, 150, 150, 0.6);
+                border-radius: 4px;
+            }
+            #${MAIN_BOX_ID} > div:nth-child(4)::-webkit-scrollbar-thumb:hover {
+                background: rgba(180, 180, 180, 0.8);
+            }
+        `;
+        document.head.appendChild(style);
+    }
+    
+    // Initialize maxRows from localStorage or config
+    if (!state.maxRows) {
+        const stored = localStorage.getItem('nls_maxRows');
+        state.maxRows = stored ? parseInt(stored, 10) : NLS.CONFIG.maxRows;
+    }
 
     /**
      * Determine the start number of the overall best lap holder.
@@ -106,6 +134,39 @@
         titleSpan.style.fontSize = '12px';
         header.appendChild(titleSpan);
 
+        const maxRowsContainer = document.createElement('div');
+        maxRowsContainer.style.marginLeft = '12px';
+        maxRowsContainer.style.display = 'flex';
+        maxRowsContainer.style.alignItems = 'center';
+        maxRowsContainer.style.gap = '6px';
+
+        const maxRowsLabel = document.createElement('label');
+        maxRowsLabel.textContent = 'Show:';
+        maxRowsLabel.style.fontSize = '11px';
+        maxRowsLabel.style.opacity = '0.9';
+        maxRowsContainer.appendChild(maxRowsLabel);
+
+        const maxRowsInput = document.createElement('input');
+        maxRowsInput.type = 'number';
+        maxRowsInput.min = '1';
+        maxRowsInput.max = '100';
+        maxRowsInput.value = String(state.maxRows);
+        maxRowsInput.style.width = '50px';
+        maxRowsInput.style.padding = '2px 4px';
+        maxRowsInput.style.fontSize = '11px';
+        maxRowsInput.style.background = 'rgba(255,255,255,0.1)';
+        maxRowsInput.style.color = '#fff';
+        maxRowsInput.style.border = '1px solid rgba(255,255,255,0.2)';
+        maxRowsInput.style.borderRadius = '3px';
+        maxRowsInput.addEventListener('change', (e) => {
+            const val = Math.min(100, Math.max(1, parseInt(e.target.value, 10) || NLS.CONFIG.maxRows));
+            state.maxRows = val;
+            localStorage.setItem('nls_maxRows', String(val));
+            NLS.renderMain();
+        });
+        maxRowsContainer.appendChild(maxRowsInput);
+        header.appendChild(maxRowsContainer);
+
         const status = document.createElement('div');
         status.style.fontSize = '12px';
         status.style.fontWeight = '700';
@@ -122,11 +183,13 @@
         tableWrapper.style.overflowY = 'auto';
         tableWrapper.style.overflowX = 'hidden';
         tableWrapper.style.flex = '1';
+        tableWrapper.style.scrollbarColor = 'rgba(150,150,150,0.6) rgba(0,0,0,0.2)';
+        tableWrapper.style.scrollbarWidth = 'thin';
 
         const table = document.createElement('table');
         table.style.width = '100%';
         table.style.borderCollapse = 'collapse';
-        table.style.tableLayout = 'fixed';
+        table.style.tableLayout = 'auto';
         table.style.fontSize = '11px';
 
         const thead = document.createElement('thead');
@@ -136,22 +199,11 @@
         headers.forEach((h, i) => {
             const th = document.createElement('th');
             th.textContent = h;
-            th.style.background = 'rgb(255, 0, 234)';
+            th.style.background = 'rgba(100, 100, 100, 0.5)';
             th.style.padding = '4px 6px';
             th.style.textAlign = i >= 5 ? 'right' : 'left';
             th.style.borderBottom = '1px solid rgba(255,255,255,0.15)';
-
-            if (i === 0) th.style.width = '24px';
-            if (i === 1) th.style.width = '34px';
-            if (i === 4) th.style.width = '70px';
-            if (i === 5) th.style.width = '54px';
-            if (i === 6) th.style.width = '42px'; // Best
-            if (i === 7) th.style.width = '42px'; // Last
-            if (i === 8) th.style.width = '46px'; // S1
-            if (i === 9) th.style.width = '46px'; // S2
-            if (i === 10) th.style.width = '46px'; // S3
-            if (i === 11) th.style.width = '46px'; // S4
-            if (i === 12) th.style.width = '46px'; // S5
+            th.style.whiteSpace = 'nowrap';
 
             tr.appendChild(th);
         });
@@ -189,7 +241,7 @@
 
         state.mainTbody.replaceChildren();
 
-        const rows = state.cars.slice(0, NLS.CONFIG.maxRows);
+        const rows = state.cars.slice(0, state.maxRows);
         if (!rows.length) {
             const tr = document.createElement('tr');
             const td = document.createElement('td');
@@ -202,6 +254,7 @@
         }
 
         const overallBestStnr = bestLapStnr();
+        const overallBestLap = state.latestPayload?.BEST?.[4] ? NLS.normalizeText(state.latestPayload.BEST[4]) : null;
         const sectorBest = bestSectorMap();
 
         rows.forEach((car, idx) => {
@@ -235,11 +288,12 @@
             cells[0].style.fontWeight = '700';
             cells[1].style.fontWeight = '700';
 
-            const lastLap = NLS.normalizeText(car.LASTLAPTIME);
-            const bestLap = NLS.normalizeText(car.FASTESTLAP);
-            if (lastLap && bestLap && lastLap === bestLap) {
-                cells[7].style.color = '#22c55e';
-                cells[7].style.fontWeight = '700';
+            // Highlight the fastest lap cell (cells[6]) if it matches the overall best time
+            const carBestLap = NLS.normalizeText(car.FASTESTLAP);
+            if (carBestLap && overallBestLap && carBestLap === overallBestLap) {
+                cells[6].style.color = '#22c55e';
+                cells[6].style.fontWeight = '700';
+                cells[6].style.background = 'rgba(34,197,94,0.08)';
             }
 
             ['S1TIME', 'S2TIME', 'S3TIME', 'S4TIME', 'S5TIME'].forEach((key, i) => {

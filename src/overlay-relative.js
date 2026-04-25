@@ -119,31 +119,32 @@
         topRow.appendChild(header);
         topRow.appendChild(controls);
 
+        const tableWrapper = document.createElement('div');
+        tableWrapper.style.overflowY = 'auto';
+        tableWrapper.style.overflowX = 'hidden';
+        tableWrapper.style.flex = '1';
+        tableWrapper.style.maxHeight = '400px';
+        tableWrapper.style.scrollbarColor = 'rgba(150,150,150,0.6) rgba(0,0,0,0.2)';
+        tableWrapper.style.scrollbarWidth = 'thin';
+
         const table = document.createElement('table');
         table.style.width = '100%';
         table.style.borderCollapse = 'collapse';
-        table.style.tableLayout = 'fixed';
+        table.style.tableLayout = 'auto';
         table.style.fontSize = '11px';
 
         const thead = document.createElement('thead');
         const tr = document.createElement('tr');
-        const headers = ['P', '#', 'Driver', 'Car', 'Class', 'Lap', 'Prog', 'Spd', 'Rel'];
+        const headers = ['P', '#', 'Driver', 'Car', 'Class', 'Lap', 'Spd', 'Rel'];
 
         headers.forEach((h, i) => {
             const th = document.createElement('th');
             th.textContent = h;
-            th.style.background = 'rgba(255,255,255,0.08)';
+            th.style.background = 'rgba(100, 100, 100, 0.5)';
             th.style.padding = '4px 6px';
             th.style.textAlign = i >= 5 ? 'right' : 'left';
             th.style.borderBottom = '1px solid rgba(255,255,255,0.15)';
-
-            if (i === 0) th.style.width = '24px';
-            if (i === 1) th.style.width = '34px';
-            if (i === 4) th.style.width = '70px';
-            if (i === 5) th.style.width = '44px';
-            if (i === 6) th.style.width = '56px';
-            if (i === 7) th.style.width = '64px';
-            if (i === 8) th.style.width = '76px';
+            th.style.whiteSpace = 'nowrap';
 
             tr.appendChild(th);
         });
@@ -153,9 +154,10 @@
         const tbody = document.createElement('tbody');
         table.appendChild(thead);
         table.appendChild(tbody);
+        tableWrapper.appendChild(table);
 
         box.appendChild(topRow);
-        box.appendChild(table);
+        box.appendChild(tableWrapper);
         player.appendChild(box);
 
         state.relStatus = status;
@@ -361,9 +363,6 @@
                     NLS.makeCell(car.CAR),
                     NLS.makeCell(car.CLASSNAME),
                     NLS.makeCell(car.LAPS, true),
-                    NLS.makeCell('n/a', true),
-                    NLS.makeCell('n/a', true),
-                    NLS.makeCell('n/a', true),
                     NLS.makeCell(formatSpeedKph(null), true),
                     NLS.makeCell(relDisplay, true)
                 ];
@@ -372,13 +371,13 @@
                     cells[0].style.fontWeight = '700';
                     cells[1].style.fontWeight = '700';
                     cells[2].style.fontWeight = '700';
-                    cells[10].style.fontWeight = '700';
-                    cells[10].style.color = '#22c55e';
+                    cells[7].style.fontWeight = '700';
+                    cells[7].style.color = '#22c55e';
                 } else {
                     if (globalIndex < selectedIndex) {
-                        cells[10].style.color = '#facc15';
+                        cells[7].style.color = '#facc15';
                     } else {
-                        cells[10].style.color = '#93c5fd';
+                        cells[7].style.color = '#93c5fd';
                     }
                 }
 
@@ -543,7 +542,6 @@
 
             const isEstimate = Boolean(selectedProgress?.isExtrapolated || progressInfo?.isExtrapolated);
             const relValue = formatRelativeTime(deltaTrack, selectedProgress, progressInfo, isEstimate);
-            const progressValue = formatProgressPercent(progressInfo);
 
             const cells = [
                 NLS.makeCell(car.POSITION),
@@ -552,7 +550,6 @@
                 NLS.makeCell(car.CAR),
                 NLS.makeCell(car.CLASSNAME),
                 NLS.makeCell(car.LAPS, true),
-                NLS.makeCell(progressValue, true),
                 NLS.makeCell(formatSpeedKph(progressInfo), true),
                 NLS.makeCell(relValue, true)
             ];
@@ -563,10 +560,10 @@
                 cells[0].style.fontWeight = '700';
                 cells[1].style.fontWeight = '700';
                 cells[2].style.fontWeight = '700';
-                cells[8].style.fontWeight = '700';
-                cells[8].style.color = '#22c55e';
+                cells[7].style.fontWeight = '700';
+                cells[7].style.color = '#22c55e';
             } else if (Number.isFinite(deltaTrack)) {
-                cells[8].style.color = deltaTrack > 0 ? '#facc15' : '#93c5fd';
+                cells[7].style.color = deltaTrack > 0 ? '#facc15' : '#93c5fd';
             }
 
             applyCellBackground(cells, rowBg);

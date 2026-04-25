@@ -29,6 +29,7 @@
         container.style.pointerEvents = 'auto';
         container.style.borderRadius = '6px';
         container.style.boxSizing = 'border-box';
+        container.style.overflow = 'hidden';  // Prevent content overflow
 
         // Header with close button
         const header = document.createElement('div');
@@ -121,6 +122,7 @@
         
         // Add speed at start/finish
         profile.distances.push(0);
+        profile.speeds.push(0);  // Speed at start is 0
 
         for (let i = 0; i < sectors.length; i++) {
             const sectorNum = i + 1;
@@ -159,16 +161,22 @@
 
         const profile = getSpeedProfile(car, model);
         if (!profile || profile.distances.length < 2) {
+            // Set minimum size for error message
+            if (canvas.width === 0) canvas.width = 600;
+            if (canvas.height === 0) canvas.height = 400;
             ctx.fillStyle = '#fff';
             ctx.font = '12px monospace';
             ctx.fillText('No profile data available', 20, 50);
             return;
         }
 
-        // Resize canvas to fit container
+        // Resize canvas to fit container  (must account for padding)
         const rect = canvas.parentElement.getBoundingClientRect();
-        canvas.width = rect.width;
-        canvas.height = rect.height;
+        const actualWidth = Math.max(100, rect.width || 600 - 16);  // Subtract padding
+        const actualHeight = Math.max(100, rect.height || 400 - 80);  // Subtract header and padding
+        
+        canvas.width = actualWidth;
+        canvas.height = actualHeight;
 
         const padding = { top: 20, right: 20, bottom: 40, left: 60 };
         const graphWidth = canvas.width - padding.left - padding.right;
