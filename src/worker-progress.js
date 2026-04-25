@@ -43,8 +43,8 @@ function computeCarProgress(car, model, serverNowMs) {
     if (lastIntNum === 10) {
         lapDistance = 0;
         currentSectorIdx = 0;
-    } else if (lastIntNum >= 1 && lastIntNum <= 4) {
-        lapDistance = model.intermediates[lastIntNum - 1];
+    } else if (lastIntNum >= 1 && lastIntNum <= model.cumulative.length) {
+        lapDistance = model.cumulative[lastIntNum - 1];
         currentSectorIdx = lastIntNum;
     }
     
@@ -64,15 +64,21 @@ function computeCarProgress(car, model, serverNowMs) {
         }
         
         const lastIntTimeMs = toNumber(car.LASTIMTIME);
+        const sectorDistance = model.sectors[currentSectorIdx];
+        const defaultSpeedMps = 60;
+
+        if (!Number.isFinite(sectorTimeSeconds) || sectorTimeSeconds <= 0) {
+            sectorTimeSeconds = sectorDistance / defaultSpeedMps;
+        }
         
         if (Number.isFinite(sectorTimeSeconds) && sectorTimeSeconds > 0) {
             if (Number.isFinite(lastIntTimeMs) && lastIntTimeMs > 0) {
                 const elapsedMs = Math.max(0, serverNowMs - lastIntTimeMs);
                 const sectorTimeMs = sectorTimeSeconds * 1000;
                 const progress = clamp(elapsedMs / sectorTimeMs, 0, 1);
-                lapDistance += progress * model.sectors[currentSectorIdx];
+                lapDistance += progress * sectorDistance;
             } else {
-                lapDistance += 0.5 * model.sectors[currentSectorIdx];
+                lapDistance += 0.5 * sectorDistance;
             }
         }
     }
@@ -80,7 +86,8 @@ function computeCarProgress(car, model, serverNowMs) {
     const laps = toNumber(car.LAPS) ?? 0;
     const absoluteProgress = laps * model.trackLength + lapDistance;
     
-    let estimatedSpeedMps = 200;
+    let estimatedSpeedMps = 60; // Default fallback (216 km/h - reasonable for race cars)
+    let speedSource = 'Default fallback (60 m/s = 216 km/h)';
     const sectorTimes = [];
     for (let i = 0; i < model.sectors.length; i++) {
         const timeSeconds = parseTime(car['S' + (i + 1) + 'TIME']);
@@ -92,13 +99,15 @@ function computeCarProgress(car, model, serverNowMs) {
         const avgSectorSeconds = sectorTimes.reduce((a, b) => a + b) / sectorTimes.length;
         const avgSectorMeters = model.sectors[0];
         estimatedSpeedMps = avgSectorMeters / avgSectorSeconds;
+        speedSource = `Avg of ${sectorTimes.length} sectors: ${avgSectorMeters.toFixed(0)}m ÷ ${avgSectorSeconds.toFixed(1)}s avg`;
     }
     
     return {
         progress: absoluteProgress,
         lapDistance,
         isExtrapolated: false,
-        speedMps: estimatedSpeedMps
+        speedMps: estimatedSpeedMps,
+        speedSource: speedSource
     };
 }
 

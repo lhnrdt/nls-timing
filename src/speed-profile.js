@@ -16,8 +16,8 @@
         container.style.position = 'absolute';
         container.style.top = '100px';
         container.style.left = '100px';
-        container.style.width = '600px';
-        container.style.height = '400px';
+        container.style.width = '650px';
+        container.style.height = '450px';
         container.style.background = 'rgba(0,0,0,0.88)';
         container.style.color = '#fff';
         container.style.padding = '8px';
@@ -85,7 +85,7 @@
             NLS.makeDraggable(container, header);
         }
         if (NLS.makeResizable) {
-            NLS.makeResizable(container, 400, 250);
+            NLS.makeResizable(container, 450, 300);
         }
 
         // Load saved position
@@ -110,42 +110,80 @@
         if (!model || !car) return null;
 
         const stnr = NLS.normalizeText(car.STNR);
-        
-        // Build speed profile from sector times
-        const profile = {
-            distances: [],    // Track distance (m)
-            speeds: []         // Speed (km/h)
-        };
-
-        let cumulativeDistance = 0;
         const sectors = model.sectors || [];
-        
-        // Add speed at start/finish
-        profile.distances.push(0);
-        profile.speeds.push(0);  // Speed at start is 0
+        if (sectors.length === 0) return null;
+
+        const profile = {
+            sectors: [],
+            maxSpeedKmh: 0
+        };
 
         for (let i = 0; i < sectors.length; i++) {
             const sectorNum = i + 1;
-            const sectorKey = `S${sectorNum}TIME`;
             const sectorDistance = sectors[i];
+            const cachedTimeMs = NLS.storage?.loadSectorTime(stnr, `S${sectorNum}TIME`);
 
-            // Get cached sector time
-            const cachedTimeMs = NLS.storage?.loadSectorTime(stnr, sectorKey);
+            let speedMps = null;
+            let sourceType = 'default';
+            let sourceLabel = 'Default fallback';
+            let sourceStartNumber = null;
+
             if (Number.isFinite(cachedTimeMs) && cachedTimeMs > 0) {
                 const sectorTimeSeconds = cachedTimeMs / 1000;
-                const speedMps = sectorDistance / sectorTimeSeconds;
-                const speedKmh = speedMps * 3.6;
-
-                // Add intermediate point and end point for this sector
-                cumulativeDistance += sectorDistance;
-                profile.distances.push(cumulativeDistance);
-                profile.speeds.push(speedKmh);
+                speedMps = sectorDistance / sectorTimeSeconds;
+                sourceType = 'cached';
+                sourceLabel = `Cached S${sectorNum}`;
+            } else {
+                const classFallback = findClassBasedSectorTime(car, sectorNum);
+                if (classFallback) {
+                    speedMps = sectorDistance / classFallback.timeSeconds;
+                    sourceType = 'class';
+                    sourceLabel = `Class fallback from #${classFallback.sourceSttnr}`;
+                    sourceStartNumber = classFallback.sourceSttnr;
+                } else {
+                    speedMps = 60;
+                    sourceType = 'default';
+                    sourceLabel = 'Default fallback';
+                }
             }
+
+            const speedKmh = speedMps * 3.6;
+            profile.maxSpeedKmh = Math.max(profile.maxSpeedKmh, speedKmh);
+            profile.sectors.push({
+                sectorNum,
+                distance: sectorDistance,
+                speedMps,
+                speedKmh,
+                sourceType,
+                sourceLabel,
+                sourceStartNumber
+            });
         }
 
-        // If we have at least 2 points, return the profile
-        if (profile.distances.length >= 2) {
-            return profile;
+        return profile;
+    }
+
+    /**
+     * Find a sector time from another car in the same class.
+     * Returns the first cached sector time found.
+     */
+    function findClassBasedSectorTime(car, sectorNum) {
+        if (!NLS.state?.cars || !NLS.storage?.loadSectorTime) return null;
+
+        const carClass = NLS.normalizeText(car.CLASSNAME);
+        const sectorKey = `S${sectorNum}TIME`;
+
+        for (const otherCar of NLS.state.cars) {
+            if (otherCar === car) continue;
+            if (NLS.normalizeText(otherCar.CLASSNAME) !== carClass) continue;
+
+            const cachedTimeMs = NLS.storage.loadSectorTime(otherCar.STNR, sectorKey);
+            if (Number.isFinite(cachedTimeMs) && cachedTimeMs > 0) {
+                return {
+                    timeSeconds: cachedTimeMs / 1000,
+                    sourceSttnr: NLS.normalizeText(otherCar.STNR)
+                };
+            }
         }
 
         return null;
@@ -160,10 +198,10 @@
         if (!canvas || !ctx) return;
 
         const profile = getSpeedProfile(car, model);
-        if (!profile || profile.distances.length < 2) {
+        if (!profile || !profile.sectors || profile.sectors.length === 0) {
             // Set minimum size for error message
-            if (canvas.width === 0) canvas.width = 600;
-            if (canvas.height === 0) canvas.height = 400;
+            if (canvas.width === 0) canvas.width = 650;
+            if (canvas.height === 0) canvas.height = 450;
             ctx.fillStyle = '#fff';
             ctx.font = '12px monospace';
             ctx.fillText('No profile data available', 20, 50);
@@ -172,21 +210,26 @@
 
         // Resize canvas to fit container  (must account for padding)
         const rect = canvas.parentElement.getBoundingClientRect();
-        const actualWidth = Math.max(100, rect.width || 600 - 16);  // Subtract padding
-        const actualHeight = Math.max(100, rect.height || 400 - 80);  // Subtract header and padding
+        const actualWidth = Math.max(100, rect.width || 650 - 16);  // Subtract padding
+        const actualHeight = Math.max(100, rect.height || 450 - 80);  // Subtract header and padding
         
         canvas.width = actualWidth;
         canvas.height = actualHeight;
 
-        const padding = { top: 20, right: 20, bottom: 40, left: 60 };
+        const padding = { top: 20, right: 20, bottom: 78, left: 60 };
         const graphWidth = canvas.width - padding.left - padding.right;
         const graphHeight = canvas.height - padding.top - padding.bottom;
 
         // Find min/max for scaling
-        const maxDistance = Math.max(...profile.distances);
-        const maxSpeed = Math.max(...profile.speeds);
+        const maxSpeed = Math.max(1, ...profile.sectors.map(sector => sector.speedKmh));
         const minSpeed = 0;  // Always start at 0
         const speedRange = maxSpeed - minSpeed || 1;
+
+        const sourceColors = {
+            cached: '#22c55e',
+            class: '#f59e0b',
+            default: '#64748b'
+        };
 
         ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -227,11 +270,13 @@
         ctx.font = '11px monospace';
         ctx.textAlign = 'center';
 
-        // Distance labels (X axis)
-        for (let i = 0; i <= 5; i++) {
-            const dist = (i / 5) * maxDistance;
-            const x = padding.left + (i / 5) * graphWidth;
-            ctx.fillText(Math.round(dist / 1000) + 'km', x, canvas.height - padding.bottom + 18);
+        // Distance labels (X axis) - always show every sector
+        const sectorCount = profile.sectors.length;
+        for (let i = 0; i < sectorCount; i++) {
+            const sector = profile.sectors[i];
+            const x = padding.left + ((i + 0.5) / sectorCount) * graphWidth;
+            const distLabel = Math.round(sector.distance / 1000) + 'km';
+            ctx.fillText(`S${sector.sectorNum} ${distLabel}`, x, canvas.height - padding.bottom + 18);
             
             ctx.strokeStyle = '#fff';
             ctx.lineWidth = 1;
@@ -256,40 +301,34 @@
             ctx.stroke();
         }
 
-        // Draw speed profile as step chart
-        ctx.strokeStyle = '#22c55e';
-        ctx.lineWidth = 2;
-        ctx.beginPath();
+        // Draw speed profile as a bar chart by sector
+        const barAreaLeft = padding.left + 2;
+        const barAreaRight = canvas.width - padding.right - 2;
+        const barAreaWidth = barAreaRight - barAreaLeft;
+        const gap = sectorCount > 1 ? Math.max(6, Math.min(12, barAreaWidth * 0.015)) : 0;
+        const barWidth = Math.max(12, (barAreaWidth - gap * (sectorCount - 1)) / sectorCount);
 
-        for (let i = 0; i < profile.distances.length; i++) {
-            const x = padding.left + (profile.distances[i] / maxDistance) * graphWidth;
-            const y = padding.top + (1 - (profile.speeds[i] - minSpeed) / speedRange) * graphHeight;
-            
-            if (i === 0) {
-                // Start at first point
-                ctx.moveTo(x, y);
-            } else {
-                // Step: horizontal line to next x, then vertical to next y
-                const prevX = padding.left + (profile.distances[i - 1] / maxDistance) * graphWidth;
-                const prevY = padding.top + (1 - (profile.speeds[i - 1] - minSpeed) / speedRange) * graphHeight;
-                
-                // Horizontal to next x position
-                ctx.lineTo(x, prevY);
-                // Vertical to next y position
-                ctx.lineTo(x, y);
-            }
-        }
-        ctx.stroke();
+        for (let i = 0; i < profile.sectors.length; i++) {
+            const sector = profile.sectors[i];
+            const left = barAreaLeft + i * (barWidth + gap);
+            const barHeight = ((sector.speedKmh - minSpeed) / speedRange) * graphHeight;
+            const top = padding.top + graphHeight - barHeight;
+            const bottom = padding.top + graphHeight;
+            const color = sourceColors[sector.sourceType] || sourceColors.default;
 
-        // Draw points
-        ctx.fillStyle = '#22c55e';
-        for (let i = 0; i < profile.distances.length; i++) {
-            const x = padding.left + (profile.distances[i] / maxDistance) * graphWidth;
-            const y = padding.top + (1 - (profile.speeds[i] - minSpeed) / speedRange) * graphHeight;
-            
-            ctx.beginPath();
-            ctx.arc(x, y, 3, 0, 2 * Math.PI);
-            ctx.fill();
+            ctx.fillStyle = color;
+            ctx.fillRect(left, top, barWidth, bottom - top);
+
+            ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(left, top, barWidth, bottom - top);
+
+            ctx.save();
+            ctx.fillStyle = '#fff';
+            ctx.textAlign = 'center';
+            ctx.font = '10px monospace';
+            ctx.fillText(Math.round(sector.speedKmh) + ' km/h', left + barWidth / 2, Math.max(padding.top + 10, top - 4));
+            ctx.restore();
         }
 
         // Draw title with car info
@@ -298,6 +337,55 @@
         ctx.textAlign = 'left';
         const carInfo = `#${NLS.normalizeText(car.STNR)} - ${NLS.normalizeText(car.CLASSNAME)}`;
         ctx.fillText(carInfo, padding.left, padding.top - 8);
+
+        // Draw sector availability legend
+        if (profile.sectors.length > 0) {
+            const legendY = canvas.height - padding.bottom + 35;
+            ctx.font = '10px monospace';
+            ctx.textAlign = 'left';
+            ctx.fillStyle = '#fff';
+            ctx.fillText('Source:', padding.left, legendY);
+
+            const legendItems = [
+                { label: 'Cached', color: sourceColors.cached },
+                { label: 'Same class', color: sourceColors.class },
+                { label: 'Default', color: sourceColors.default }
+            ];
+
+            let legendX = padding.left + 54;
+            for (const item of legendItems) {
+                const boxSize = 14;
+                ctx.fillStyle = item.color;
+                ctx.fillRect(legendX, legendY - 10, boxSize, boxSize);
+
+                ctx.fillStyle = '#fff';
+                ctx.textAlign = 'left';
+                ctx.fillText(item.label, legendX + boxSize + 4, legendY + 2);
+                legendX += 88;
+            }
+            
+            ctx.fillStyle = '#fff';
+            ctx.textAlign = 'left';
+            ctx.fillText('Green = cached, amber = same class, gray = default', padding.left, legendY + 18);
+
+            const indicatorY = legendY + 35;
+            ctx.fillText('Sectors:', padding.left, indicatorY);
+
+            let indicatorX = padding.left + 54;
+            for (let i = 0; i < profile.sectors.length; i++) {
+                const sector = profile.sectors[i];
+                const boxSize = 14;
+                const boxColor = sourceColors[sector.sourceType] || sourceColors.default;
+                ctx.fillStyle = boxColor;
+                ctx.fillRect(indicatorX, indicatorY - 10, boxSize, boxSize);
+
+                ctx.fillStyle = '#fff';
+                ctx.textAlign = 'center';
+                ctx.fillText('S' + sector.sectorNum, indicatorX + boxSize / 2, indicatorY + 2);
+
+                indicatorX += boxSize + 12;
+            }
+        }
     }
 
     /**
@@ -312,14 +400,37 @@
 
         overlay.style.display = 'flex';
         
+        // Store last viewed car for quick reopen
+        state.lastSpeedProfileCar = car;
+
         // Render on next frame to ensure canvas is sized
         requestAnimationFrame(() => {
             renderSpeedProfile(car, model);
         });
     }
 
+    /**
+     * Reopen last viewed speed profile
+     */
+    function reopenLastSpeedProfile() {
+        if (state.lastSpeedProfileCar) {
+            showSpeedProfile(state.lastSpeedProfileCar);
+        }
+    }
+
     // Export functions
     NLS.ensureSpeedProfileOverlay = ensureSpeedProfileOverlay;
     NLS.showSpeedProfile = showSpeedProfile;
+    NLS.reopenLastSpeedProfile = reopenLastSpeedProfile;
+
+    // Add keyboard shortcut to reopen profile (Ctrl+P)
+    document.addEventListener('keydown', (e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'p') {
+            if (state.lastSpeedProfileCar) {
+                e.preventDefault();
+                reopenLastSpeedProfile();
+            }
+        }
+    });
 
 })();

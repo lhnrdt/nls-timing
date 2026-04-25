@@ -173,20 +173,30 @@
         state.mapBox = box;
         state.mapCanvas = canvas;
         state.mapCtx = canvas.getContext('2d');
+        
+        // Initialize zoom and pan state
+        state.mapZoom = 1;
+        state.mapOffsetX = 0;
+        state.mapOffsetY = 0;
+        state.mapIsPanning = false;
+        state.mapPanStartX = 0;
+        state.mapPanStartY = 0;
+        state.mapPanStartOffsetX = 0;
+        state.mapPanStartOffsetY = 0;
 
         ensureTrackSvgData();
 
         // Setup window manager (draggable, resizable, hideable)
         NLS.setupWindow(box, header, 'track_map', 300, 300);
 
-        // Add mouse move listener for hover tooltips
+        // Add mouse move listener for hover tooltips, zoom, and pan
         setupCanvasInteraction(canvas);
 
         return box;
     }
 
     /**
-     * Setup canvas interaction (hover tooltips, click selection)
+     * Setup canvas interaction (hover tooltips, click selection, zoom, pan)
      */
     function setupCanvasInteraction(canvas) {
         const tooltip = document.createElement('div');
@@ -209,30 +219,28 @@
         state.mapHoveredMarker = null;
         state.mapHoveredCar = null;
 
-        canvas.addEventListener('mousemove', (e) => {
+        /**
+         * Convert screen coordinates to canvas coordinates accounting for zoom/pan
+         */
+        function screenToCanvas(screenX, screenY) {
             const rect = canvas.getBoundingClientRect();
-            const canvasX = (e.clientX - rect.left) * (canvas.width / rect.width);
-            const canvasY = (e.clientY - rect.top) * (canvas.height / rect.height);
+            const screenCanvasX = (screenX - rect.left) * (canvas.width / rect.width);
+            const screenCanvasY = (screenY - rect.top) * (canvas.height / rect.height);
+            
+            // Inverse transform
+            const canvasX = (screenCanvasX - state.mapOffsetX) / state.mapZoom;
+            const canvasY = (screenCanvasY - state.mapOffsetY) / state.mapZoom;
+            return { canvasX, canvasY };
+        }
+
+        canvas.addEventListener('mousemove', (e) => {
+            const { canvasX, canvasY } = screenToCanvas(e.clientX, e.clientY);
 
             let hoveredItem = null;
             let hoveredText = '';
 
-            // Check if hovering over markers
-            if (state.mapMarkers) {
-                for (const marker of state.mapMarkers) {
-                    const dx = canvasX - marker.x;
-                    const dy = canvasY - marker.y;
-                    const dist = Math.hypot(dx, dy);
-                    if (dist <= 8) {
-                        hoveredItem = marker;
-                        hoveredText = marker.tooltip;
-                        break;
-                    }
-                }
-            }
-
-            // Check if hovering over cars
-            if (!hoveredItem && state.mapCars) {
+            // Check if hovering over cars first so they win over timing line markers
+            if (state.mapCars) {
                 for (const car of state.mapCars) {
                     const dx = canvasX - car.x;
                     const dy = canvasY - car.y;
@@ -246,9 +254,23 @@
                 }
             }
 
+            // Check if hovering over markers only when no car is hit
+            if (!hoveredItem && state.mapMarkers) {
+                for (const marker of state.mapMarkers) {
+                    const dx = canvasX - marker.x;
+                    const dy = canvasY - marker.y;
+                    const dist = Math.hypot(dx, dy);
+                    if (dist <= 8) {
+                        hoveredItem = marker;
+                        hoveredText = marker.tooltip;
+                        break;
+                    }
+                }
+            }
+
             state.mapHoveredMarker = hoveredItem?.type === 'marker' ? hoveredItem : null;
             state.mapHoveredCar = hoveredItem?.type === 'car' ? hoveredItem : null;
-            canvas.style.cursor = hoveredItem ? 'pointer' : 'default';
+            canvas.style.cursor = hoveredItem ? 'pointer' : (state.mapIsPanning ? 'grabbing' : 'grab');
 
             // Show/hide tooltip
             if (hoveredText) {
@@ -266,7 +288,56 @@
             state.mapHoveredMarker = null;
             state.mapHoveredCar = null;
             canvas.style.cursor = 'default';
+            state.mapIsPanning = false;
         });
+
+        canvas.addEventListener('mousedown', (e) => {
+            // Right-click or middle-click for panning
+            if (e.button === 1 || e.button === 2) {
+                e.preventDefault();
+                state.mapIsPanning = true;
+                state.mapPanStartX = e.clientX;
+                state.mapPanStartY = e.clientY;
+                state.mapPanStartOffsetX = state.mapOffsetX;
+                state.mapPanStartOffsetY = state.mapOffsetY;
+                canvas.style.cursor = 'grabbing';
+            }
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (state.mapIsPanning) {
+                const deltaX = e.clientX - state.mapPanStartX;
+                const deltaY = e.clientY - state.mapPanStartY;
+                state.mapOffsetX = state.mapPanStartOffsetX + deltaX;
+                state.mapOffsetY = state.mapPanStartOffsetY + deltaY;
+                renderTrackMap();
+            }
+        });
+
+        document.addEventListener('mouseup', () => {
+            state.mapIsPanning = false;
+        });
+
+        canvas.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            
+            const rect = canvas.getBoundingClientRect();
+            const screenX = e.clientX - rect.left;
+            const screenY = e.clientY - rect.top;
+            
+            const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
+            const newZoom = NLS.clamp(state.mapZoom * zoomFactor, 0.5, 3);
+            
+            // Zoom towards mouse position
+            const mouseCanvasX = (screenX - state.mapOffsetX) / state.mapZoom;
+            const mouseCanvasY = (screenY - state.mapOffsetY) / state.mapZoom;
+            
+            state.mapOffsetX = screenX - mouseCanvasX * newZoom;
+            state.mapOffsetY = screenY - mouseCanvasY * newZoom;
+            state.mapZoom = newZoom;
+            
+            renderTrackMap();
+        }, { passive: false });
 
         canvas.addEventListener('click', (e) => {
             if (state.mapHoveredCar) {
@@ -282,6 +353,17 @@
                 }
             }
         });
+
+        canvas.addEventListener('dblclick', (e) => {
+            // Reset zoom and pan on double-click
+            state.mapZoom = 1;
+            state.mapOffsetX = 0;
+            state.mapOffsetY = 0;
+            renderTrackMap();
+        });
+
+        // Prevent context menu on right-click
+        canvas.addEventListener('contextmenu', (e) => e.preventDefault());
     }
 
 
@@ -619,9 +701,31 @@
         ctx.fillStyle = 'rgba(0,0,0,0)';
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+        // Apply zoom and pan transformations
+        ctx.save();
+        ctx.translate(state.mapOffsetX || 0, state.mapOffsetY || 0);
+        ctx.scale(state.mapZoom || 1, state.mapZoom || 1);
+
         const pathData = state.mapPathData;
         const pathLength = pathData.totalDist;
         const selected = state.selectedStartNumber.trim();
+
+        // Calculate viewport bounds in canvas coordinates
+        const zoom = state.mapZoom || 1;
+        const offsetX = state.mapOffsetX || 0;
+        const offsetY = state.mapOffsetY || 0;
+        
+        const viewMinX = -offsetX / zoom;
+        const viewMaxX = (canvas.width - offsetX) / zoom;
+        const viewMinY = -offsetY / zoom;
+        const viewMaxY = (canvas.height - offsetY) / zoom;
+        
+        // Add padding for smooth culling at edges
+        const padding = 50;
+        const cullMinX = viewMinX - padding;
+        const cullMaxX = viewMaxX + padding;
+        const cullMinY = viewMinY - padding;
+        const cullMaxY = viewMaxY + padding;
 
         // Draw track with curvature coloring
         drawTrack(ctx, pathData);
@@ -647,7 +751,7 @@
             }
         });
 
-        // Draw car dots
+        // Draw car dots (with viewport culling)
         state.cars.forEach(car => {
             const progress = NLS.getCarProgress(car);
             if (!progress || !Number.isFinite(progress.lapDistance)) return;
@@ -658,9 +762,16 @@
             const point = getPointAtDistance(pathData, NLS.clamp(fraction, 0, 1) * pathLength);
             if (!point) return;
 
+            // Cull cars outside viewport bounds
+            const baseSize = NLS.clamp(Number(state.dotSize) || NLS.CONFIG.defaultDotSize, 1, 10);
+            const cullBuffer = baseSize + 5;
+            if (point.x < cullMinX - cullBuffer || point.x > cullMaxX + cullBuffer ||
+                point.y < cullMinY - cullBuffer || point.y > cullMaxY + cullBuffer) {
+                return;
+            }
+
             const isSelected = NLS.normalizeText(car.STNR) === selected;
             const color = classColor(car.CLASSNAME);
-            const baseSize = NLS.clamp(Number(state.dotSize) || NLS.CONFIG.defaultDotSize, 1, 10);
             const radius = isSelected ? baseSize + 1 : baseSize;
 
             // Draw halo for selected car
@@ -703,6 +814,8 @@
                 tooltip: tooltipText
             });
         });
+
+        ctx.restore();
     }
 
     NLS.ensureTrackMap = ensureTrackMap;

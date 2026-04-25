@@ -110,6 +110,19 @@
     }
 
     /**
+     * Get all cached sector times for all cars.
+     * @returns {Record<string, Record<string, number>>}
+     */
+    function loadAllCachedTimes() {
+        try {
+            return JSON.parse(localStorage.getItem(getStorageKey(KEYS.CAR_SECTOR_TIMES)) || '{}');
+        } catch (e) {
+            console.warn('Failed to load all cached times:', e);
+            return {};
+        }
+    }
+
+    /**
      * Clear all cached sector times.
      */
     function clearSectorTimesCache() {
@@ -191,6 +204,7 @@
         saveSectorTime,
         loadSectorTime,
         loadAllSectorTimes,
+        loadAllCachedTimes,
         clearSectorTimesCache,
         saveSetting,
         loadSetting,

@@ -111,12 +111,14 @@
                                 window.NLS.intermediateTimestamps[timestampKey] = nowMs;
                             }
 
-                            // Persist sector times for this car
-                            for (let i = 1; i <= 9; i++) {
-                                const timeKey = `S${i}TIME`;
-                                const timeSeconds = NLS.parseTime(car[timeKey]);
-                                if (Number.isFinite(timeSeconds) && timeSeconds > 0) {
-                                    NLS.storage.saveSectorTime(car.STNR, timeKey, timeSeconds * 1000);
+                            // Persist sector times only for non-pit laps
+                            if (!NLS.isRetired?.(car)) {
+                                for (let i = 1; i <= 9; i++) {
+                                    const timeKey = `S${i}TIME`;
+                                    const timeSeconds = NLS.parseTime(car[timeKey]);
+                                    if (Number.isFinite(timeSeconds) && timeSeconds > 0) {
+                                        NLS.storage.saveSectorTime(car.STNR, timeKey, timeSeconds * 1000);
+                                    }
                                 }
                             }
                         }

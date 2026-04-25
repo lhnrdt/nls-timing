@@ -114,8 +114,39 @@
             renderRelative();
         });
 
+        // Add speed profile button
+        const profileBtn = document.createElement('button');
+        profileBtn.textContent = '📊 Profile';
+        profileBtn.style.padding = '2px 8px';
+        profileBtn.style.fontSize = '11px';
+        profileBtn.style.background = 'rgba(34, 197, 94, 0.2)';
+        profileBtn.style.border = '1px solid rgba(34, 197, 94, 0.5)';
+        profileBtn.style.borderRadius = '4px';
+        profileBtn.style.color = '#22c55e';
+        profileBtn.style.cursor = 'pointer';
+        profileBtn.style.userSelect = 'none';
+        profileBtn.style.transition = 'all 0.2s ease';
+        profileBtn.addEventListener('mouseover', () => {
+            profileBtn.style.background = 'rgba(34, 197, 94, 0.4)';
+            profileBtn.style.borderColor = '#22c55e';
+        });
+        profileBtn.addEventListener('mouseout', () => {
+            profileBtn.style.background = 'rgba(34, 197, 94, 0.2)';
+            profileBtn.style.borderColor = 'rgba(34, 197, 94, 0.5)';
+        });
+        profileBtn.addEventListener('click', () => {
+            const selected = state.selectedStartNumber.trim();
+            if (selected) {
+                const car = state.cars.find(c => NLS.normalizeText(c.STNR) === selected);
+                if (car && NLS.showSpeedProfile) {
+                    NLS.showSpeedProfile(car);
+                }
+            }
+        });
+
         controls.appendChild(label);
         controls.appendChild(input);
+        controls.appendChild(profileBtn);
         topRow.appendChild(header);
         topRow.appendChild(controls);
 
@@ -478,13 +509,14 @@
 
         /**
          * Format speed in km/h from progress data.
-         * @param {{speedMps:number}|null} progressInfo
+         * @param {{speedMps:number, speedSource:string}|null} progressInfo
          * @returns {string}
          */
         function formatSpeedKph(progressInfo) {
             const speed = progressInfo?.speedMps;
             if (!Number.isFinite(speed) || speed <= 0) return 'n/a';
-            return `${Math.round(speed * 3.6)} km/h`;
+            const source = progressInfo?.speedSource || 'Unknown';
+            return `${Math.round(speed * 3.6)} km/h\n(${source})`;
         }
 
         /**
@@ -553,6 +585,16 @@
                 NLS.makeCell(formatSpeedKph(progressInfo), true),
                 NLS.makeCell(relValue, true)
             ];
+
+            // Enable multiline for speed cell (index 6) with source info
+            const speedCell = cells[6];
+            speedCell.style.whiteSpace = 'normal';
+            speedCell.style.wordWrap = 'break-word';
+            speedCell.style.overflow = 'visible';
+            speedCell.style.textOverflow = 'clip';
+            speedCell.style.lineHeight = '1.3';
+            speedCell.style.padding = '4px 6px';
+            speedCell.innerHTML = formatSpeedKph(progressInfo).replace(/\n/g, '<br>');
 
             applyEstimatedPositionMarker(cells[0], car, estimatedPositionMap);
 

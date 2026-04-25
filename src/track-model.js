@@ -57,6 +57,38 @@
     }
 
     /**
+     * Get a sector time from another car in the same class (as fallback)
+     */
+    function findClassBasedSectorTime(car, sectorNum) {
+        if (!NLS.state?.cars || !NLS.storage?.loadSectorTime) return null;
+        
+        const carClass = NLS.normalizeText(car.CLASSNAME);
+        const sectorKey = `S${sectorNum}TIME`;
+        
+        // Search for another car in the same class with this sector time cached
+        for (const otherCar of NLS.state.cars) {
+            if (otherCar === car) continue;
+            if (NLS.normalizeText(otherCar.CLASSNAME) !== carClass) continue;
+            
+            const cachedTimeMs = NLS.storage.loadSectorTime(otherCar.STNR, sectorKey);
+            if (Number.isFinite(cachedTimeMs) && cachedTimeMs > 0) {
+                const timeSeconds = cachedTimeMs / 1000;
+                return { timeSeconds, sourceSttnr: NLS.normalizeText(otherCar.STNR) };
+            }
+        }
+        
+        return null;
+    }
+
+    /**
+     * Get the timestamp when the car last crossed its current intermediate.
+     */
+    function getLastIntermediateTimestampMs(car, lastIntNum) {
+        const timestampKey = `${NLS.normalizeText(car.STNR)}:INTERMEDIATE_${lastIntNum}`;
+        return window.NLS?.intermediateTimestamps?.[timestampKey] ?? null;
+    }
+
+    /**
      * Compute car progress on main thread (fallback)
      */
     function computeCarProgressMainThread(car, model, serverNowMs) {
@@ -72,14 +104,15 @@
             // At start/finish line, in sector 1
             lapDistance = 0;
             currentSectorIdx = 0;
-        } else if (lastIntNum >= 1 && lastIntNum <= 4) {
+        } else if (lastIntNum >= 1 && lastIntNum <= model.cumulative.length) {
             // At intermediate N, so in sector N+1
-            lapDistance = model.intermediates[lastIntNum - 1];
+            lapDistance = model.cumulative[lastIntNum - 1];
             currentSectorIdx = lastIntNum;
         }
         
         // Calculate speed and interpolate through current sector if we have timing data
-        let estimatedSpeedMps = 200; // Default fallback
+        let estimatedSpeedMps = 60; // Default fallback (216 km/h - reasonable for race cars)
+        let speedSource = 'Default fallback (60 m/s = 216 km/h)';
         
         if (currentSectorIdx >= 0 && currentSectorIdx < model.sectors.length) {
             const sectorNum = currentSectorIdx + 1; // 1-indexed
@@ -90,14 +123,30 @@
                 const cachedTimeMs = NLS.storage.loadSectorTime(car.STNR, `S${sectorNum}TIME`);
                 if (Number.isFinite(cachedTimeMs) && cachedTimeMs > 0) {
                     sectorTimeSeconds = cachedTimeMs / 1000;
+                    const sectorDistance = model.sectors[currentSectorIdx];
+                    speedSource = `S${sectorNum} cached: ${(sectorDistance/1000).toFixed(2)}km ÷ ${sectorTimeSeconds.toFixed(1)}s`;
                 }
             }
             
-            const lastIntTimeMs = NLS.toNumber(car.LASTIMTIME);
+            // Fallback: If no cached time for this car's sector, try class-based fallback
+            if (!Number.isFinite(sectorTimeSeconds)) {
+                const classBasedResult = findClassBasedSectorTime(car, sectorNum);
+                if (classBasedResult) {
+                    sectorTimeSeconds = classBasedResult.timeSeconds;
+                    const sectorDistance = model.sectors[currentSectorIdx];
+                    speedSource = `S${sectorNum} (${classBasedResult.sourceSttnr} class avg): ${(sectorDistance/1000).toFixed(2)}km ÷ ${sectorTimeSeconds.toFixed(1)}s`;
+                }
+            }
+            
+            const lastIntTimeMs = NLS.toNumber(car.LASTIMTIME) ?? getLastIntermediateTimestampMs(car, lastIntNum);
+            const sectorDistance = model.sectors[currentSectorIdx];
+
+            if (!Number.isFinite(sectorTimeSeconds) || sectorTimeSeconds <= 0) {
+                sectorTimeSeconds = sectorDistance / estimatedSpeedMps;
+            }
             
             if (Number.isFinite(sectorTimeSeconds) && sectorTimeSeconds > 0) {
                 // Calculate speed from current sector: distance / time
-                const sectorDistance = model.sectors[currentSectorIdx];
                 estimatedSpeedMps = sectorDistance / sectorTimeSeconds;
                 
                 if (Number.isFinite(lastIntTimeMs) && lastIntTimeMs > 0) {
@@ -121,7 +170,8 @@
             progress: absoluteProgress,
             lapDistance,
             isExtrapolated: false,
-            speedMps: estimatedSpeedMps
+            speedMps: estimatedSpeedMps,
+            speedSource: speedSource
         };
     }
 
@@ -162,7 +212,7 @@
             return { sectorIdx: 1, intermediateIdx: 0 };
         }
         
-        if (lastIntNum >= 1 && lastIntNum <= 4) {
+        if (lastIntNum >= 1 && lastIntNum <= model.cumulative.length) {
             return { sectorIdx: lastIntNum + 1, intermediateIdx: lastIntNum };
         }
         
